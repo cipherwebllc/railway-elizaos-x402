@@ -14,7 +14,6 @@ export const character: Character = {
   plugins: [
     // Core plugins first
     '@elizaos/plugin-sql',
-    '@elizaos/plugin-mcp',
 
     // Text-only plugins (no embedding support)
     ...(process.env.ANTHROPIC_API_KEY?.trim() ? ['@elizaos/plugin-anthropic'] : []),
@@ -25,7 +24,7 @@ export const character: Character = {
     ...(process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ? ['@elizaos/plugin-google-genai'] : []),
 
     // Ollama as fallback (only if no main LLM providers are configured)
-    ...(process.env.OLLAMA_API_ENDPOINT?.trim() ? ['@elizaos/plugin-ollama'] : []),
+    ...(process.env.OLLAMA_API_KEY?.trim() ? ['@elizaos/plugin-ollama'] : []),
 
     // Platform plugins
     ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
@@ -49,7 +48,7 @@ export const character: Character = {
         coingecko: {
           type: 'stdio',
           command: 'node',
-          args: ['/Users/masia02/Documents/Cline/MCP/coingecko-server-manual/build/index.js'],
+          args: [''],
           env: {},
         },
 
@@ -57,19 +56,9 @@ export const character: Character = {
         brave_search: {
           type: 'stdio',
           command: 'node',
-          args: ['/Users/masia02/.nvm/versions/node/v23.6.0/bin/mcp-server-brave-search'],
+          args: [''],
           env: { BRAVE_API_KEY: process.env.BRAVE_API_KEY || '' },
         },
-
-        // filesystem: {
-        //   type: 'stdio',
-        //   command: 'npx',
-        //   args: ['-y', '@modelcontextprotocol/server-filesystem', '/Users/masia02/Desktop'],
-        //   env: {},
-        // },
-
-        // Note: MCP Gateway is running at http://localhost:8000
-        // See MCP_GATEWAY_GUIDE.md for API usage
       },
     },
   },
