@@ -60,6 +60,10 @@ export const twoCharacter: Character = {
         secrets: {
             // 必要ならここに個別キーを渡すこともできる
             OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+            OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+            GOOGLE_GENERATIVE_AI_API_KEY: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+            OLLAMA_API_KEY: process.env.OLLAMA_API_KEY,
         }
     },
     plugins: [
@@ -71,7 +75,7 @@ export const twoCharacter: Character = {
         ...(process.env.OPENROUTER_API_KEY?.trim() ? ['@elizaos/plugin-openrouter'] : []),
 
         // Embedding-capable plugins (optional, based on available credentials)
-        // ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
+        ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
         ...(process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ? ['@elizaos/plugin-google-genai'] : []),
 
         // Ollama as fallback (only if no main LLM providers are configured)
