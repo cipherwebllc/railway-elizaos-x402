@@ -1,26 +1,43 @@
-import { logger, type IAgentRuntime, type Project, type ProjectAgent } from '@elizaos/core';
-import { coinGeckoPlugin } from './coingecko-plugin.ts';
-import { newsPlugin } from './news-plugin.ts';
-import { character } from './character.ts';
+import {
+  logger,
+  type IAgentRuntime,
+  type Project,
+  type ProjectAgent,
+} from "@elizaos/core";
 
-const initCharacter = () => {
-  logger.info('Initializing character');
-  logger.info({ name: character.name }, 'Name:');
+import { coinGeckoPlugin } from "./coingecko-plugin.ts";
+import { newsPlugin } from "./news-plugin.ts";
+
+// 1体目: もともとの相談エージェント
+import { character as baseCharacter } from "./character.ts";
+// 2体目: さっき作った Hyperliza用キャラ
+import { twoCharacter } from "./two-character.ts";
+
+// 1体目
+const baseAgent: ProjectAgent = {
+  character: baseCharacter,
+  init: async (_runtime: IAgentRuntime) => {
+    logger.info({ name: baseCharacter.name }, "Base agent initialized");
+  },
+  plugins: [coinGeckoPlugin, newsPlugin],
 };
 
-export const projectAgent: ProjectAgent = {
-  character,
-  init: async (_runtime: IAgentRuntime) => initCharacter(),
-  plugins: [
-    coinGeckoPlugin,  // CoinGecko plugin for crypto price data
-    newsPlugin,       // News plugin for real-time crypto news
-  ],
+// 2体目
+const twoAgent: ProjectAgent = {
+  character: twoCharacter,
+  init: async (_runtime: IAgentRuntime) => {
+    logger.info(
+      { name: twoCharacter.name },
+      "Two agent initialized",
+    );
+  },
+  plugins: [coinGeckoPlugin, newsPlugin], // 共有でよければ同じでOK
 };
 
-const project: Project = {
-  agents: [projectAgent],
+export const project: Project = {
+  agents: [baseAgent, twoAgent], // ← ここが一番重要
 };
 
-export { character } from './character.ts';
+export { baseCharacter as character };
 
 export default project;
