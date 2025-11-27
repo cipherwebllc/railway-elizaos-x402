@@ -7,6 +7,10 @@ import {
 
 import { coinGeckoPlugin } from "./coingecko-plugin.ts";
 import { newsPlugin } from "./news-plugin.ts";
+import { gasMonitorPlugin } from "./gas-monitor-plugin.ts";
+import { japanRegulationPlugin } from "./jp-regulation-plugin.ts";
+import { deFiYieldPlugin } from "./defi-yield-plugin.ts";
+import { exchangeMonitorPlugin } from "./exchange-monitor-plugin.ts";
 
 // 1体目: もともとの相談エージェント
 import { character as baseCharacter } from "./character.ts";
@@ -22,7 +26,16 @@ const baseAgent: ProjectAgent = {
   init: async (_runtime: IAgentRuntime) => {
     logger.info({ name: baseCharacter.name }, "Base agent initialized");
   },
-  plugins: [coinGeckoPlugin, newsPlugin, x402Plugin, plugin],
+  plugins: [
+    coinGeckoPlugin,
+    newsPlugin,
+    gasMonitorPlugin,
+    japanRegulationPlugin,
+    deFiYieldPlugin,
+    exchangeMonitorPlugin,
+    x402Plugin,
+    plugin,
+  ],
 };
 
 // 2体目
@@ -34,7 +47,16 @@ const twoAgent: ProjectAgent = {
       "Two agent initialized",
     );
   },
-  plugins: [coinGeckoPlugin, newsPlugin, x402Plugin, plugin],
+  plugins: [
+    coinGeckoPlugin,
+    newsPlugin,
+    gasMonitorPlugin,
+    japanRegulationPlugin,
+    deFiYieldPlugin,
+    exchangeMonitorPlugin,
+    x402Plugin,
+    plugin,
+  ],
 };
 
 export const project: Project = {
