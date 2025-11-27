@@ -61,19 +61,26 @@ export class CoinGeckoService extends Service {
       const response = await fetch(url);
 
       if (!response.ok) {
+        // If rate limited (429), just log warning and return null instead of throwing
+        if (response.status === 429) {
+          logger.warn(`CoinGecko API rate limit reached for ${coinId}, skipping price fetch`);
+          return null;
+        }
         throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
 
       if (!data[coinId]) {
-        throw new Error(`No data found for coin: ${coinId}`);
+        logger.warn(`No data found for coin: ${coinId}`);
+        return null;
       }
 
       return data[coinId];
     } catch (error) {
       logger.error({ error, coinId, vsCurrency }, 'Error fetching price from CoinGecko');
-      throw error;
+      // Return null instead of throwing to prevent crashes
+      return null;
     }
   }
 
@@ -90,6 +97,10 @@ export class CoinGeckoService extends Service {
       const response = await fetch(url);
 
       if (!response.ok) {
+        if (response.status === 429) {
+          logger.warn(`CoinGecko API rate limit reached for ${coinId}, skipping coin data fetch`);
+          return null;
+        }
         throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`);
       }
 
@@ -97,7 +108,7 @@ export class CoinGeckoService extends Service {
       return data;
     } catch (error) {
       logger.error({ error, coinId }, 'Error fetching coin data from CoinGecko');
-      throw error;
+      return null;
     }
   }
 
@@ -114,6 +125,10 @@ export class CoinGeckoService extends Service {
       const response = await fetch(url);
 
       if (!response.ok) {
+        if (response.status === 429) {
+          logger.warn(`CoinGecko API rate limit reached for query ${query}, skipping search`);
+          return null;
+        }
         throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`);
       }
 
@@ -121,7 +136,7 @@ export class CoinGeckoService extends Service {
       return data;
     } catch (error) {
       logger.error({ error, query }, 'Error searching coins on CoinGecko');
-      throw error;
+      return null;
     }
   }
 }
@@ -199,6 +214,21 @@ const getCryptoPriceAction: Action = {
 
       // Fetch price data
       const priceData = await service.getPrice(coinId, 'usd');
+
+      // Check if price data is available
+      if (!priceData) {
+        await callback({
+          text: `Sorry, ${coinName} price data is temporarily unavailable. Please try again later.`,
+          source: message.content.source,
+        });
+
+        return {
+          text: 'Price data unavailable',
+          values: { success: false, reason: 'rate_limited' },
+          data: {},
+          success: false,
+        };
+      }
 
       // Format response
       const price = priceData.usd;
@@ -349,15 +379,28 @@ const cryptoPriceProvider: Provider = {
 
       for (const coin of coins) {
         try {
-          prices[coin] = await service.getPrice(coin, 'usd');
+          const price = await service.getPrice(coin, 'usd');
+          if (price) {
+            prices[coin] = price;
+          }
         } catch (error) {
           logger.error({ error, coin }, 'Error fetching price for coin');
         }
       }
 
+      // Only include coins with valid price data
       const priceText = Object.entries(prices)
+        .filter(([_, data]) => data && data.usd)
         .map(([coin, data]) => `${coin}: $${data.usd.toLocaleString()}`)
         .join(', ');
+
+      if (!priceText) {
+        return {
+          text: 'Crypto price data temporarily unavailable',
+          values: {},
+          data: {},
+        };
+      }
 
       return {
         text: `Current crypto prices: ${priceText}`,

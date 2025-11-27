@@ -78,13 +78,20 @@ const getCryptoNewsAction: Action = {
   validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
     const text = message.content.text.toLowerCase();
 
-    const newsKeywords = ['news', 'latest', 'headlines', 'articles', 'updates', 'happening'];
-    const cryptoKeywords = ['crypto', 'bitcoin', 'ethereum', 'btc', 'eth', 'cryptocurrency', 'coin', 'market'];
+    const newsKeywords = ['news', 'latest', 'headlines', 'articles', 'updates', 'happening', 'ニュース', '最新', '情報'];
+    const cryptoKeywords = ['crypto', 'bitcoin', 'ethereum', 'btc', 'eth', 'cryptocurrency', 'coin', 'market', 'web3', '暗号通貨', '仮想通貨'];
 
     const hasNewsKeyword = newsKeywords.some(keyword => text.includes(keyword));
     const hasCryptoKeyword = cryptoKeywords.some(keyword => text.includes(keyword));
 
-    return hasNewsKeyword || (hasCryptoKeyword && text.includes('what'));
+    // Match if either news keyword is found, or crypto keyword with news context
+    const isNewsQuery = hasNewsKeyword || (hasCryptoKeyword && text.includes('what'));
+
+    if (isNewsQuery) {
+      logger.info(`[GET_CRYPTO_NEWS] Validate returned TRUE for: "${message.content.text}"`);
+    }
+
+    return isNewsQuery;
   },
 
   handler: async (
@@ -192,13 +199,13 @@ const getCryptoNewsAction: Action = {
   examples: [
     [
       {
-        name: '{{name1}}',
+        name: '{{user1}}',
         content: {
           text: '最新の暗号通貨ニュースを教えて',
         },
       },
       {
-        name: '{{name2}}',
+        name: '{{agentName}}',
         content: {
           text: '📰 最新の暗号通貨ニュース (5件):\n\n1. **Bitcoin Reaches New High**\n   📅 2024-01-15 10:30:00\n   📰 出典: CoinDesk\n   🔗 https://...',
           actions: ['GET_CRYPTO_NEWS'],
@@ -207,15 +214,45 @@ const getCryptoNewsAction: Action = {
     ],
     [
       {
-        name: '{{name1}}',
+        name: '{{user1}}',
         content: {
           text: 'What is the latest crypto news?',
         },
       },
       {
-        name: '{{name2}}',
+        name: '{{agentName}}',
         content: {
           text: '📰 最新の暗号通貨ニュース (5件):\n\n1. **Ethereum Upgrade Announced**\n   📅 2024-01-15 09:15:00\n   📰 出典: Cointelegraph\n   🔗 https://...',
+          actions: ['GET_CRYPTO_NEWS'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{user1}}',
+        content: {
+          text: '最新のニュース',
+        },
+      },
+      {
+        name: '{{agentName}}',
+        content: {
+          text: '📰 最新の暗号通貨ニュース (5件):\n\n...',
+          actions: ['GET_CRYPTO_NEWS'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{user1}}',
+        content: {
+          text: 'latest news',
+        },
+      },
+      {
+        name: '{{agentName}}',
+        content: {
+          text: '📰 Latest cryptocurrency news (5 items):\n\n...',
           actions: ['GET_CRYPTO_NEWS'],
         },
       },

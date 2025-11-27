@@ -13,13 +13,16 @@ import { character as baseCharacter } from "./character.ts";
 // 2体目: さっき作った Hyperliza用キャラ
 import { twoCharacter } from "./two-character.ts";
 
+import plugin from "./plugin.ts"; // starter plugin
+import { x402Plugin } from "./x402-plugin.ts";
+
 // 1体目
 const baseAgent: ProjectAgent = {
   character: baseCharacter,
   init: async (_runtime: IAgentRuntime) => {
     logger.info({ name: baseCharacter.name }, "Base agent initialized");
   },
-  plugins: [coinGeckoPlugin, newsPlugin],
+  plugins: [coinGeckoPlugin, newsPlugin, x402Plugin, plugin],
 };
 
 // 2体目
@@ -31,7 +34,7 @@ const twoAgent: ProjectAgent = {
       "Two agent initialized",
     );
   },
-  plugins: [coinGeckoPlugin, newsPlugin], // 共有でよければ同じでOK
+  plugins: [coinGeckoPlugin, newsPlugin, x402Plugin, plugin],
 };
 
 export const project: Project = {
