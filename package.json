@@ -33,7 +33,9 @@
     "@elizaos/plugin-anthropic": "^1.5.12",
     "@elizaos/plugin-bootstrap": "^1.6.4",
     "@elizaos/plugin-browser": "^1.0.3",
+    "@elizaos/plugin-coinmarketcap": "^1.0.1",
     "@elizaos/plugin-defillama": "^1.3.5",
+    "@elizaos/plugin-github": "^1.2.9",
     "@elizaos/plugin-mcp": "^1.2.0",
     "@elizaos/plugin-ollama": "^1.2.4",
     "@elizaos/plugin-openai": "^1.5.18",
@@ -41,6 +43,7 @@
     "@elizaos/plugin-pyth-data": "^1.0.0",
     "@elizaos/plugin-solana": "^1.2.6",
     "@elizaos/plugin-sql": "^1.6.4",
+    "@elizaos/plugin-web-search": "^0.25.6-alpha.1",
     "@elizaos/server": "^1.6.4",
     "@tanstack/react-query": "^5.29.0",
     "clsx": "^2.1.1",
@@ -82,7 +85,8 @@
     "cypress:component": "bun run test:install && cypress run --component",
     "cypress:e2e": "bun run test:install && cypress run --e2e",
     "cypress:open": "bun run test:install && cypress open",
-    "build:watch": "bun run build.ts --watch"
+    "build:watch": "bun run build.ts --watch",
+    "postinstall": "node scripts/patch-client-html.cjs"
   },
   "publishConfig": {
     "access": "public"
