@@ -435,7 +435,7 @@ const adminLoginAction: Action = {
             {
                 name: '{{user1}}',
                 content: {
-                    text: '9ZUadvP4gEFf7y8YwubZmdH5eK5-bvKSeqw9dUjDjb7c8-2uB3nNsbMYq-bp5DX',
+                    text: '[63文字の管理者認証キー]',
                 },
             },
             {
@@ -450,7 +450,7 @@ const adminLoginAction: Action = {
             {
                 name: '{{user1}}',
                 content: {
-                    text: 'x402-admin-secret',
+                    text: '[フォールバック管理者キー]',
                 },
             },
             {
@@ -465,7 +465,7 @@ const adminLoginAction: Action = {
             {
                 name: '{{user1}}',
                 content: {
-                    text: '9ZUadvP4gEFf7y8YwubZmdH5eK5-bvKSeqw9dUjDjb7c8-2uB3nNsbMYq-bp5DX',
+                    text: '[管理者認証キー]',
                 },
             },
             {
@@ -480,7 +480,7 @@ const adminLoginAction: Action = {
             {
                 name: '{{user1}}',
                 content: {
-                    text: '9ZUadvP4gEFf7y8YwubZmdH5eK5-bvKSeqw9dUjDjb7c8-2uB3nNsbMYq-bp5DX',
+                    text: '[Admin authentication key]',
                 },
             },
             {
