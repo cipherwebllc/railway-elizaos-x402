@@ -279,7 +279,7 @@ const checkPaymentAction: Action = {
         const paymentLink = `${baseUrl}/pay?user=${userId}`;
 
         const responseContent: Content = {
-            text: `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n🔗 [支払いページを開く](${paymentLink})\n\n(Base Sepoliaで0.1 USDCを支払ってください)`,
+            text: `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 支払いページ:\n${paymentLink}\n\n(Base Sepoliaで0.1 USDCを支払ってください)\n\n支払い完了後、「支払いました」とメッセージを送信してください。`,
             actions: ['WAIT_FOR_PAYMENT'],
             source: message.content.source,
         };
