@@ -270,12 +270,31 @@ const checkPaymentAction: Action = {
             };
         }
 
-        // Payment wallet address (Base Sepolia)
+        // Payment page URL
+        // Railway: Use main domain with :3001 port (e.g., https://your-app.up.railway.app:3001/pay)
+        // Vercel: Use separate deployment (set PAYMENT_PAGE_URL env var)
+        const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL;
+        const PAYMENT_BASE_URL = process.env.PAYMENT_BASE_URL;
         const RECEIVER_ADDRESS = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
         const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 
+        let responseText = '';
+
+        if (PAYMENT_PAGE_URL) {
+            // Custom payment page (Vercel/Netlify)
+            const paymentLink = `${PAYMENT_PAGE_URL}?user=${encodeURIComponent(userId)}`;
+            responseText = `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払いページ（ウォレット接続）:**\n${paymentLink}\n\nまたは、手動で以下のアドレスに送金:\n\`\`\`\n${RECEIVER_ADDRESS}\n\`\`\`\n\n支払い完了後、トランザクションハッシュまたは「支払いました」と送信してください。\n\n📝 **User ID:** \`${userId}\`\n💰 **Token:** USDC (Base Sepolia)\n🔗 **Contract:** \`${USDC_ADDRESS}\``;
+        } else if (PAYMENT_BASE_URL) {
+            // Railway integrated payment server (port 3001)
+            const paymentLink = `${PAYMENT_BASE_URL}:3001/pay?user=${encodeURIComponent(userId)}`;
+            responseText = `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払いページ（ウォレット接続）:**\n${paymentLink}\n\nまたは、手動で以下のアドレスに送金:\n\`\`\`\n${RECEIVER_ADDRESS}\n\`\`\`\n\n支払い完了後、トランザクションハッシュまたは「支払いました」と送信してください。\n\n📝 **User ID:** \`${userId}\`\n💰 **Token:** USDC (Base Sepolia)\n🔗 **Contract:** \`${USDC_ADDRESS}\``;
+        } else {
+            // Manual payment only
+            responseText = `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払い方法:**\n\n1️⃣ Base Sepoliaネットワークに接続\n2️⃣ 以下のアドレスに0.1 USDCを送信:\n\`\`\`\n${RECEIVER_ADDRESS}\n\`\`\`\n\n3️⃣ 支払い完了後、以下のいずれかを送信:\n   • トランザクションハッシュ（推奨）\n   • 「支払いました」というメッセージ\n\n**自動検証:** トランザクションハッシュ(0x...)を送信すると、ブロックチェーン上で自動的に検証されます。\n\n📝 **User ID:** \`${userId}\`\n💰 **Token:** USDC (Base Sepolia)\n🔗 **Contract:** \`${USDC_ADDRESS}\``;
+        }
+
         const responseContent: Content = {
-            text: `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払い方法:**\n\n1️⃣ Base Sepoliaネットワークに接続\n2️⃣ 以下のアドレスに0.1 USDCを送信:\n\`\`\`\n${RECEIVER_ADDRESS}\n\`\`\`\n\n3️⃣ 支払い完了後、以下のいずれかを送信:\n   • トランザクションハッシュ（推奨）\n   • 「支払いました」というメッセージ\n\n**自動検証:** トランザクションハッシュ(0x...)を送信すると、ブロックチェーン上で自動的に検証されます。\n\n📝 **User ID:** \`${userId}\`\n💰 **Token:** USDC (Base Sepolia)\n🔗 **Contract:** \`${USDC_ADDRESS}\``,
+            text: responseText,
             actions: ['WAIT_FOR_PAYMENT'],
             source: message.content.source,
         };
@@ -944,7 +963,7 @@ export const x402Plugin: Plugin = {
         }
         logger.info(`*** Fallback admin key: x402-admin-secret ***`);
 
-        // Start standalone server on port 3001 (local development only)
+        // Start standalone payment server on port 3001
         const PORT = 3001;
         const server = http.createServer(async (req, res) => {
             const parsedUrl = url.parse(req.url || '', true);
