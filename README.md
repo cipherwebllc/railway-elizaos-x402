@@ -151,14 +151,20 @@ When deploying to Railway, set the following environment variables in your Railw
    ```
    💰 0.1 USDC の支払いが必要です
 
-   🔗 支払いページ:
-   https://your-app.railway.app:3001/pay?user=123
+   👉 <a href="https://your-app.railway.app:3001/pay?user=123">支払いページへ</a>
 
-   👆 クリックして MetaMask で支払い
+   💡 対応ウォレット: MetaMask / Coinbase / Rabby など
    ```
-3. **リンクをクリック** → MetaMask で 0.1 USDC 支払い
-4. **「支払いました」** または txハッシュ送信
-5. **Bot が自動検証** → 質問に回答 ✨
+3. **リンクをクリック** → 支払いページが開く
+4. **ウォレットを選択**:
+   - 🦊 MetaMask
+   - 🔗 WalletConnect（開発中）
+   - 💙 Coinbase Wallet
+   - 🐰 Rabby Wallet
+5. **ウォレット接続** → 自動的に Base Sepolia に切り替え
+6. **0.1 USDC 支払い** → トランザクション確認
+7. **「支払いました」** または txハッシュ送信
+8. **Bot が自動検証** → 質問に回答 ✨
 
 #### 技術仕様
 
