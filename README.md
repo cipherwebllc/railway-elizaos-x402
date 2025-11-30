@@ -121,7 +121,6 @@ The test utilities in `__tests__/utils/` provide helper functions to simplify wr
 When deploying to Railway, set the following environment variables in your Railway dashboard:
 
 #### Required Variables
-- `PAYMENT_BASE_URL` - Your Railway app URL (e.g., `https://your-app.up.railway.app`)
 - `ADMIN_API_KEY` - Your admin authentication key (63-character secure string)
 - `DISCORD_API_TOKEN` - Your Discord bot token
 - `OPENROUTER_API_KEY` - OpenRouter API key for Claude
@@ -132,20 +131,55 @@ When deploying to Railway, set the following environment variables in your Railw
 - `GITHUB_TOKEN` - GitHub personal access token
 - `COINMARKETCAP_API_KEY` - CoinMarketCap API key
 
-### X402 Payment System Setup
+### X402 Payment System
 
-The payment system automatically adapts to the environment:
+**🎉 自動設定で簡単！設定不要で動作します**
 
-**Local Development:**
-- Payment links use `http://localhost:3001`
-- X402 payment server runs on port 3001
+#### 仕組み
 
-**Railway Production:**
-- Set `PAYMENT_BASE_URL` to your Railway public URL
-- Payment links will use your production domain
-- Example: `https://your-app.up.railway.app/pay?user=...`
+支払いシステムはRailway環境を自動検出し、すぐに使えます：
 
-**Important:** Without `PAYMENT_BASE_URL` set, Railway users will see localhost links and payments won't work.
+1. **自動URL検出**: Railwayの環境変数から自動的にURLを生成
+2. **支払いページ**: ポート3001で自動起動（`/pay` ルート）
+3. **MetaMask連携**: ワンクリックでウォレット接続・支払い
+4. **自動検証**: ブロックチェーン上でトランザクションを自動確認
+
+#### ユーザー体験の流れ
+
+1. **ユーザーが質問**
+2. **Botが支払いリンクを表示**:
+   ```
+   💰 0.1 USDC の支払いが必要です
+
+   🔗 支払いページ:
+   https://your-app.railway.app:3001/pay?user=123
+
+   👆 クリックして MetaMask で支払い
+   ```
+3. **リンクをクリック** → MetaMask で 0.1 USDC 支払い
+4. **「支払いました」** または txハッシュ送信
+5. **Bot が自動検証** → 質問に回答 ✨
+
+#### 技術仕様
+
+| 項目 | 詳細 |
+|------|------|
+| **Network** | Base Sepolia (テストネット) |
+| **Token** | USDC (`0x036CbD...`) |
+| **Amount** | 0.1 USDC = 1 クレジット |
+| **Payment Server** | ポート3001（自動起動） |
+| **Verification** | Ethers.js v6 でブロックチェーン検証 |
+
+#### 管理者機能
+
+管理者としてログインすると、支払いをバイパスできます：
+
+```
+あなた: [63文字の管理者認証キー]
+Bot: 🔓 管理者としてログインしました
+```
+
+環境変数 `ADMIN_API_KEY` に63文字のランダムキーを設定してください。
 
 ## Configuration
 
