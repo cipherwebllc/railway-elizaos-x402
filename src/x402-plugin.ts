@@ -280,16 +280,23 @@ const checkPaymentAction: Action = {
 
         let responseText = '';
 
+        // Determine payment link
+        let paymentLink = '';
         if (PAYMENT_PAGE_URL) {
-            // Custom payment page (Vercel/Netlify)
-            const paymentLink = `${PAYMENT_PAGE_URL}?user=${encodeURIComponent(userId)}`;
-            responseText = `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払いページ（ウォレット接続）:**\n${paymentLink}\n\nまたは、手動で以下のアドレスに送金:\n\`\`\`\n${RECEIVER_ADDRESS}\n\`\`\`\n\n支払い完了後、トランザクションハッシュまたは「支払いました」と送信してください。\n\n📝 **User ID:** \`${userId}\`\n💰 **Token:** USDC (Base Sepolia)\n🔗 **Contract:** \`${USDC_ADDRESS}\``;
+            // Custom payment page (Vercel/Netlify) - use as-is with /pay path
+            paymentLink = PAYMENT_PAGE_URL.includes('/pay')
+                ? `${PAYMENT_PAGE_URL}?user=${encodeURIComponent(userId)}`
+                : `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
         } else if (PAYMENT_BASE_URL) {
             // Railway integrated payment server (port 3001)
-            const paymentLink = `${PAYMENT_BASE_URL}:3001/pay?user=${encodeURIComponent(userId)}`;
-            responseText = `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払いページ（ウォレット接続）:**\n${paymentLink}\n\nまたは、手動で以下のアドレスに送金:\n\`\`\`\n${RECEIVER_ADDRESS}\n\`\`\`\n\n支払い完了後、トランザクションハッシュまたは「支払いました」と送信してください。\n\n📝 **User ID:** \`${userId}\`\n💰 **Token:** USDC (Base Sepolia)\n🔗 **Contract:** \`${USDC_ADDRESS}\``;
+            paymentLink = `${PAYMENT_BASE_URL}:3001/pay?user=${encodeURIComponent(userId)}`;
+        }
+
+        if (paymentLink) {
+            // Wallet connect payment page available
+            responseText = `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払いページ（ウォレット接続）:**\n${paymentLink}\n\n支払い完了後、トランザクションハッシュまたは「支払いました」と送信してください。\n\n📝 **User ID:** \`${userId}\``;
         } else {
-            // Manual payment only
+            // Manual payment only (no payment page configured)
             responseText = `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払い方法:**\n\n1️⃣ Base Sepoliaネットワークに接続\n2️⃣ 以下のアドレスに0.1 USDCを送信:\n\`\`\`\n${RECEIVER_ADDRESS}\n\`\`\`\n\n3️⃣ 支払い完了後、以下のいずれかを送信:\n   • トランザクションハッシュ（推奨）\n   • 「支払いました」というメッセージ\n\n**自動検証:** トランザクションハッシュ(0x...)を送信すると、ブロックチェーン上で自動的に検証されます。\n\n📝 **User ID:** \`${userId}\`\n💰 **Token:** USDC (Base Sepolia)\n🔗 **Contract:** \`${USDC_ADDRESS}\``;
         }
 
