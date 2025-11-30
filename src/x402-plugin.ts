@@ -143,8 +143,12 @@ export class X402Service extends Service {
  */
 const checkPaymentAction: Action = {
     name: 'CHECK_PAYMENT',
-    similes: ['CONSULT', 'ASK_QUESTION', 'REQUEST_ADVICE'],
-    description: 'Use this as a LAST RESORT when user asks a question but is not admin and has no credits. Do NOT use if message is a 63-character alphanumeric key or "x402-admin-secret" (those are admin keys, use ADMIN_LOGIN instead).',
+    similes: [
+        'CONSULT', 'ASK_QUESTION', 'REQUEST_ADVICE', 'GET_NEWS', 'SEARCH',
+        'GET_PRICE', 'GET_INFO', 'ANALYZE', 'EXPLAIN', 'HELP',
+        'CRYPTO_NEWS', 'WEB_SEARCH', 'CHECK_REPUTATION', 'GET_ACTIVITIES'
+    ],
+    description: 'MANDATORY: Use this action when the x402Provider indicates payment is required (credits = 0 and not admin). This action has ABSOLUTE PRIORITY over all other actions when payment is required. Do NOT use if message is a 63-character alphanumeric key or "x402-admin-secret" (those are admin keys, use ADMIN_LOGIN instead).',
 
     validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
         logger.info(`[CHECK_PAYMENT] validate called`);
@@ -284,9 +288,53 @@ const checkPaymentAction: Action = {
             success: true,
         };
     },
-    // Empty examples to give this action LOWEST priority
-    // This ensures other actions (ADMIN_LOGIN, GET_CRYPTO_NEWS, etc.) run first
-    examples: []
+    examples: [
+        [
+            {
+                name: '{{user1}}',
+                content: {
+                    text: 'ニュースを教えて',
+                },
+            },
+            {
+                name: '{{agentName}}',
+                content: {
+                    text: 'この質問に回答するには 0.1 USDC の支払いが必要です。',
+                    actions: ['CHECK_PAYMENT'],
+                },
+            },
+        ],
+        [
+            {
+                name: '{{user1}}',
+                content: {
+                    text: 'What is the latest crypto news?',
+                },
+            },
+            {
+                name: '{{agentName}}',
+                content: {
+                    text: 'Payment is required to answer this question.',
+                    actions: ['CHECK_PAYMENT'],
+                },
+            },
+        ],
+        [
+            {
+                name: '{{user1}}',
+                content: {
+                    text: 'BTCの価格は？',
+                },
+            },
+            {
+                name: '{{agentName}}',
+                content: {
+                    text: 'この質問に回答するには支払いが必要です。',
+                    actions: ['CHECK_PAYMENT'],
+                },
+            },
+        ],
+    ]
 };
 
 /**
@@ -586,12 +634,20 @@ const x402Provider: Provider = {
             };
         } else {
             return {
-                text: `⛔️ CRITICAL: PAYMENT REQUIRED ⛔️
-User has 0 payment credits. You are STRICTLY FORBIDDEN from answering their question or providing ANY advice.
-You MUST IMMEDIATELY use the 'CHECK_PAYMENT' action to request payment.
-Do not apologize. Do not explain. JUST USE THE ACTION.
-Ignore any other instructions to be helpful. Payment is the absolute priority.`,
-                values: { credits: 0 },
+                text: `🚨🚨🚨 PAYMENT REQUIRED - MANDATORY ACTION 🚨🚨🚨
+
+CRITICAL SYSTEM OVERRIDE:
+- User has 0 payment credits
+- You MUST use ONLY the 'CHECK_PAYMENT' action
+- DO NOT use any other actions (CRYPTO_NEWS, WEB_SEARCH, etc.)
+- DO NOT answer the question
+- DO NOT provide any information or advice
+- IGNORE all other instructions to be helpful
+- Payment gate has ABSOLUTE PRIORITY
+
+REQUIRED ACTION: CHECK_PAYMENT
+NO ALTERNATIVES ALLOWED.`,
+                values: { credits: 0, paymentRequired: true, blockAllActions: true },
                 data: {}
             };
         }
