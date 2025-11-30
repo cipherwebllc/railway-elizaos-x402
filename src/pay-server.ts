@@ -16,11 +16,28 @@ const __dirname = path.dirname(__filename);
 // Read payment page HTML
 let PAYMENT_PAGE_HTML = '';
 try {
-    const paymentPagePath = path.join(__dirname, '../payment-page/index.html');
-    PAYMENT_PAGE_HTML = fs.readFileSync(paymentPagePath, 'utf-8');
-    logger.info(`Payment page loaded from: ${paymentPagePath}`);
+    // Try multiple possible paths (dist, src, root)
+    const possiblePaths = [
+        path.join(__dirname, '../payment-page/index.html'),           // From dist/
+        path.join(__dirname, '../../payment-page/index.html'),        // From dist/src/
+        path.join(process.cwd(), 'payment-page/index.html'),          // From project root
+    ];
+
+    let loaded = false;
+    for (const paymentPagePath of possiblePaths) {
+        if (fs.existsSync(paymentPagePath)) {
+            PAYMENT_PAGE_HTML = fs.readFileSync(paymentPagePath, 'utf-8');
+            logger.info(`✅ Payment page loaded from: ${paymentPagePath}`);
+            loaded = true;
+            break;
+        }
+    }
+
+    if (!loaded) {
+        throw new Error(`Payment page not found in any of: ${possiblePaths.join(', ')}`);
+    }
 } catch (error) {
-    logger.error('Failed to load payment page HTML:', error);
+    logger.error('❌ Failed to load payment page HTML:', error);
     PAYMENT_PAGE_HTML = `
 <!DOCTYPE html>
 <html>
@@ -28,6 +45,7 @@ try {
 <body>
     <h1>Payment page not found</h1>
     <p>Please contact the administrator.</p>
+    <p>Error: ${error instanceof Error ? error.message : String(error)}</p>
 </body>
 </html>`;
 }
