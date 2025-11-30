@@ -277,13 +277,12 @@ const checkPaymentAction: Action = {
 
         const paymentLink = `${baseUrl}:3001/pay?user=${encodeURIComponent(userId)}`;
 
-        // Response with wallet-connect payment page (Discord auto-links plain URLs)
+        // Response with multi-wallet payment page (HTML link format)
         const responseText = `💰 **0.1 USDC の支払いが必要です**
 
-🔗 **支払いページ:**
-${paymentLink}
+👉 <a href="${paymentLink}">支払いページへ</a>
 
-👆 クリックして MetaMask で支払い
+💡 対応ウォレット: MetaMask / Coinbase / Rabby など
 
 ✅ 支払い完了後:
 • トランザクションハッシュ(0x...)を送信（自動検証）
