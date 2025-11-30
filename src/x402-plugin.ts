@@ -269,9 +269,14 @@ const checkPaymentAction: Action = {
             };
         }
 
-        // Generate a mock payment link with 0.1 USDC
-        // Using standalone server on port 3001
-        const paymentLink = `http://localhost:3001/pay?user=${userId}`;
+        // Generate payment link with environment-aware base URL
+        // Railway provides PUBLIC_URL or RAILWAY_STATIC_URL, fallback to localhost for local dev
+        const baseUrl = process.env.PUBLIC_URL ||
+                       process.env.RAILWAY_STATIC_URL ||
+                       process.env.PAYMENT_BASE_URL ||
+                       'http://localhost:3001';
+
+        const paymentLink = `${baseUrl}/pay?user=${userId}`;
 
         const responseContent: Content = {
             text: `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n🔗 [支払いページを開く](${paymentLink})\n\n(Base Sepoliaで0.1 USDCを支払ってください)`,
