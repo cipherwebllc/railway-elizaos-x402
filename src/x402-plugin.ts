@@ -13,6 +13,7 @@ import {
 } from '@elizaos/core';
 import * as http from 'http';
 import * as url from 'url';
+import { ethers } from 'ethers';
 
 /**
  * Helper function to extract the actual user ID from a message
@@ -269,17 +270,12 @@ const checkPaymentAction: Action = {
             };
         }
 
-        // Generate payment link with environment-aware base URL
-        // Railway provides PUBLIC_URL or RAILWAY_STATIC_URL, fallback to localhost for local dev
-        const baseUrl = process.env.PUBLIC_URL ||
-                       process.env.RAILWAY_STATIC_URL ||
-                       process.env.PAYMENT_BASE_URL ||
-                       'http://localhost:3001';
-
-        const paymentLink = `${baseUrl}/pay?user=${userId}`;
+        // Payment wallet address (Base Sepolia)
+        const RECEIVER_ADDRESS = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+        const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 
         const responseContent: Content = {
-            text: `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 支払いページ:\n${paymentLink}\n\n(Base Sepoliaで0.1 USDCを支払ってください)\n\n支払い完了後、「支払いました」とメッセージを送信してください。`,
+            text: `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払い方法:**\n\n1️⃣ Base Sepoliaネットワークに接続\n2️⃣ 以下のアドレスに0.1 USDCを送信:\n\`\`\`\n${RECEIVER_ADDRESS}\n\`\`\`\n\n3️⃣ 支払い完了後、以下のいずれかを送信:\n   • トランザクションハッシュ（推奨）\n   • 「支払いました」というメッセージ\n\n**自動検証:** トランザクションハッシュ(0x...)を送信すると、ブロックチェーン上で自動的に検証されます。\n\n📝 **User ID:** \`${userId}\`\n💰 **Token:** USDC (Base Sepolia)\n🔗 **Contract:** \`${USDC_ADDRESS}\``,
             actions: ['WAIT_FOR_PAYMENT'],
             source: message.content.source,
         };
@@ -343,17 +339,117 @@ const checkPaymentAction: Action = {
 };
 
 /**
- * Action: Verify Payment (Mock)
- * Allows the user to claim they have paid.
+ * Helper function to verify payment on Base Sepolia blockchain
+ */
+async function verifyPaymentOnChain(userId: string, txHash?: string): Promise<{ verified: boolean; amount?: string; error?: string }> {
+    try {
+        const RECEIVER_ADDRESS = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+        const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+        const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
+
+        const provider = new ethers.JsonRpcProvider(RPC_URL);
+
+        // If transaction hash is provided, verify that specific transaction
+        if (txHash) {
+            logger.info(`[VERIFY_PAYMENT] Checking transaction: ${txHash}`);
+            const tx = await provider.getTransaction(txHash);
+
+            if (!tx) {
+                return { verified: false, error: 'トランザクションが見つかりません' };
+            }
+
+            const receipt = await provider.getTransactionReceipt(txHash);
+            if (!receipt || receipt.status !== 1) {
+                return { verified: false, error: 'トランザクションが失敗しています' };
+            }
+
+            // Check if it's a USDC transfer to the receiver address
+            if (tx.to?.toLowerCase() !== USDC_ADDRESS.toLowerCase()) {
+                return { verified: false, error: 'USDC契約への転送ではありません' };
+            }
+
+            // Parse transfer event logs
+            const usdcInterface = new ethers.Interface([
+                'event Transfer(address indexed from, address indexed to, uint256 value)'
+            ]);
+
+            for (const log of receipt.logs) {
+                try {
+                    const parsed = usdcInterface.parseLog({ topics: log.topics as string[], data: log.data });
+                    if (parsed && parsed.name === 'Transfer') {
+                        const to = parsed.args[1];
+                        const value = parsed.args[2];
+
+                        if (to.toLowerCase() === RECEIVER_ADDRESS.toLowerCase()) {
+                            // USDC has 6 decimals
+                            const amount = ethers.formatUnits(value, 6);
+                            logger.info(`[VERIFY_PAYMENT] Found transfer of ${amount} USDC`);
+
+                            if (parseFloat(amount) >= 0.1) {
+                                return { verified: true, amount };
+                            } else {
+                                return { verified: false, error: `送金額が不足しています: ${amount} USDC` };
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Skip logs that can't be parsed
+                    continue;
+                }
+            }
+
+            return { verified: false, error: '受取アドレスへの転送が見つかりません' };
+        }
+
+        // If no tx hash, check recent transactions to receiver address
+        logger.info(`[VERIFY_PAYMENT] Checking recent transactions for user: ${userId}`);
+
+        // Get the latest block
+        const latestBlock = await provider.getBlockNumber();
+        const fromBlock = latestBlock - 1000; // Check last ~1000 blocks (~30 minutes)
+
+        // Query Transfer events to the receiver address
+        const usdcContract = new ethers.Contract(
+            USDC_ADDRESS,
+            ['event Transfer(address indexed from, address indexed to, uint256 value)'],
+            provider
+        );
+
+        const filter = usdcContract.filters.Transfer(null, RECEIVER_ADDRESS);
+        const events = await usdcContract.queryFilter(filter, fromBlock, latestBlock);
+
+        // Check if there's a recent payment of at least 0.1 USDC
+        for (const event of events.reverse()) { // Most recent first
+            if ('args' in event) {
+                const amount = ethers.formatUnits(event.args[2], 6);
+                if (parseFloat(amount) >= 0.1) {
+                    logger.info(`[VERIFY_PAYMENT] Found recent payment: ${amount} USDC in tx ${event.transactionHash}`);
+                    return { verified: true, amount };
+                }
+            }
+        }
+
+        return { verified: false, error: '最近の支払いが見つかりません。支払い後、数分お待ちください。' };
+
+    } catch (error) {
+        logger.error('[VERIFY_PAYMENT] Blockchain verification error:', error);
+        return { verified: false, error: `検証エラー: ${error.message}` };
+    }
+}
+
+/**
+ * Action: Verify Payment (Blockchain-verified)
+ * Automatically verifies payment on Base Sepolia blockchain
  */
 const verifyPaymentAction: Action = {
     name: 'VERIFY_PAYMENT',
-    similes: ['I_PAID', 'PAYMENT_COMPLETE', '支払いました'],
-    description: 'Verifies the user payment and grants access',
+    similes: ['I_PAID', 'PAYMENT_COMPLETE', '支払いました', 'PAID', '送金しました', 'トランザクション'],
+    description: 'Verifies the user payment on blockchain and grants access',
 
     validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
         const text = (message.content.text || '').toLowerCase();
-        return text.includes('支払いました') || text.includes('paid');
+        return text.includes('支払いました') || text.includes('paid') || text.includes('送金') ||
+               text.includes('0x') || text.includes('トランザクション');
     },
 
     handler: async (
@@ -370,25 +466,48 @@ const verifyPaymentAction: Action = {
         }
 
         const userId = extractUserId(message);
-        logger.info(`[VERIFY_PAYMENT] Adding credit for userId: ${userId}`);
+        logger.info(`[VERIFY_PAYMENT] Verifying payment for userId: ${userId}`);
 
-        // In a real app, we would check the blockchain here.
-        service.addCredit(userId, 1);
+        // Extract transaction hash if provided
+        const text = message.content.text || '';
+        const txHashMatch = text.match(/0x[a-fA-F0-9]{64}/);
+        const txHash = txHashMatch ? txHashMatch[0] : undefined;
 
-        const responseContent: Content = {
-            text: 'お支払いありがとうございます！0.1 USDCを受領しました。\nご質問をどうぞ！（1回分）',
-            actions: ['GRANT_ACCESS'],
-            source: message.content.source,
-        };
+        // Verify payment on blockchain
+        const result = await verifyPaymentOnChain(userId, txHash);
 
-        await callback(responseContent);
+        if (result.verified) {
+            service.addCredit(userId, 1);
 
-        return {
-            text: 'Credit added',
-            values: { success: true },
-            data: { actionName: 'VERIFY_PAYMENT' },
-            success: true,
-        };
+            const responseContent: Content = {
+                text: `✅ お支払いを確認しました！\n\n💰 受領額: ${result.amount} USDC\n🎫 クレジット: 1回分付与\n\nご質問をどうぞ！`,
+                actions: ['GRANT_ACCESS'],
+                source: message.content.source,
+            };
+
+            await callback(responseContent);
+
+            return {
+                text: 'Payment verified and credit added',
+                values: { success: true, amount: result.amount },
+                data: { actionName: 'VERIFY_PAYMENT' },
+                success: true,
+            };
+        } else {
+            const responseContent: Content = {
+                text: `❌ お支払いを確認できませんでした。\n\n理由: ${result.error}\n\n💡 ヒント:\n- トランザクションハッシュを含めて送信してください\n- 支払い後、数分待ってから再試行してください\n- 正しいアドレスとネットワーク(Base Sepolia)を確認してください`,
+                source: message.content.source,
+            };
+
+            await callback(responseContent);
+
+            return {
+                text: 'Payment verification failed',
+                values: { success: false, error: result.error },
+                data: { actionName: 'VERIFY_PAYMENT' },
+                success: false,
+            };
+        }
     },
     examples: [
         [
@@ -825,7 +944,7 @@ export const x402Plugin: Plugin = {
         }
         logger.info(`*** Fallback admin key: x402-admin-secret ***`);
 
-        // Start standalone server on port 3001
+        // Start standalone server on port 3001 (local development only)
         const PORT = 3001;
         const server = http.createServer(async (req, res) => {
             const parsedUrl = url.parse(req.url || '', true);
@@ -885,7 +1004,6 @@ export const x402Plugin: Plugin = {
             logger.info(`*** X402 Payment Server running on port ${PORT} *** `);
         });
     },
-    // No routes needed for ElizaOS server since we run our own
 };
 
 export default x402Plugin;
