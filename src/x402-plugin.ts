@@ -11,9 +11,8 @@ import {
     type State,
     logger,
 } from '@elizaos/core';
-import * as http from 'http';
-import * as url from 'url';
 import { ethers } from 'ethers';
+import { startPaymentServer } from './pay-server.ts';
 
 /**
  * Helper function to extract the actual user ID from a message
@@ -270,35 +269,28 @@ const checkPaymentAction: Action = {
             };
         }
 
-        // Payment page URL
-        // Railway: Use main domain with :3001 port (e.g., https://your-app.up.railway.app:3001/pay)
-        // Vercel: Use separate deployment (set PAYMENT_PAGE_URL env var)
-        const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL;
-        const PAYMENT_BASE_URL = process.env.PAYMENT_BASE_URL;
-        const RECEIVER_ADDRESS = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
-        const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+        // Auto-detect Railway URL and generate payment link
+        const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+            ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+            : process.env.RAILWAY_STATIC_URL
+            || 'http://localhost';
 
-        let responseText = '';
+        const paymentLink = `${baseUrl}:3001/pay?user=${encodeURIComponent(userId)}`;
 
-        // Determine payment link
-        let paymentLink = '';
-        if (PAYMENT_PAGE_URL) {
-            // Custom payment page (Vercel/Netlify) - use as-is with /pay path
-            paymentLink = PAYMENT_PAGE_URL.includes('/pay')
-                ? `${PAYMENT_PAGE_URL}?user=${encodeURIComponent(userId)}`
-                : `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
-        } else if (PAYMENT_BASE_URL) {
-            // Railway integrated payment server (port 3001)
-            paymentLink = `${PAYMENT_BASE_URL}:3001/pay?user=${encodeURIComponent(userId)}`;
-        }
+        // Response with wallet-connect payment page (Discord auto-links plain URLs)
+        const responseText = `💰 **0.1 USDC の支払いが必要です**
 
-        if (paymentLink) {
-            // Wallet connect payment page available
-            responseText = `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払いページ（ウォレット接続）:**\n${paymentLink}\n\n支払い完了後、トランザクションハッシュまたは「支払いました」と送信してください。\n\n📝 **User ID:** \`${userId}\``;
-        } else {
-            // Manual payment only (no payment page configured)
-            responseText = `この質問に回答するには 0.1 USDC の支払いが必要です。\n\n💳 **支払い方法:**\n\n1️⃣ Base Sepoliaネットワークに接続\n2️⃣ 以下のアドレスに0.1 USDCを送信:\n\`\`\`\n${RECEIVER_ADDRESS}\n\`\`\`\n\n3️⃣ 支払い完了後、以下のいずれかを送信:\n   • トランザクションハッシュ（推奨）\n   • 「支払いました」というメッセージ\n\n**自動検証:** トランザクションハッシュ(0x...)を送信すると、ブロックチェーン上で自動的に検証されます。\n\n📝 **User ID:** \`${userId}\`\n💰 **Token:** USDC (Base Sepolia)\n🔗 **Contract:** \`${USDC_ADDRESS}\``;
-        }
+🔗 **支払いページ:**
+${paymentLink}
+
+👆 クリックして MetaMask で支払い
+
+✅ 支払い完了後:
+• トランザクションハッシュ(0x...)を送信（自動検証）
+• または「支払いました」と送信
+
+📝 User ID: \`${userId}\`
+🌐 Network: Base Sepolia`;
 
         const responseContent: Content = {
             text: responseText,
@@ -804,156 +796,6 @@ NO ALTERNATIVES ALLOWED.`,
     },
 };
 
-const PAYMENT_PAGE_HTML = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pay with x402</title>
-    <link rel="apple-touch-icon" href="https://elizaos.github.io/eliza-avatars/Eliza/portrait.png">
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; line-height: 1.6; background-color: #f5f5f5; }
-        .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; }
-        h1 { margin-top: 0; font-size: 24px; margin-bottom: 16px; }
-        p { color: #666; margin-bottom: 24px; }
-        .amount { font-size: 32px; font-weight: bold; color: #0052FF; margin: 20px 0; }
-        .status { margin-top: 20px; padding: 12px; border-radius: 8px; font-size: 14px; display: none; }
-        .error { background: #ffebee; color: #c62828; }
-        .success { background: #e8f5e9; color: #2e7d32; }
-        w3m-button { margin-bottom: 16px; }
-        #payBtn { background: #0052FF; color: white; border: none; padding: 12px 24px; border-radius: 20px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 16px; transition: background 0.2s; }
-        #payBtn:hover { background: #0040cc; }
-        #payBtn:disabled { background: #ccc; cursor: not-allowed; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>Consultation Payment</h1>
-        <p>Unlock agent access by paying</p>
-        <div class="amount">0.1 USDC</div>
-        <p style="font-size: 14px; color: #888;">on Base Sepolia</p>
-        
-        <!-- Web3Modal Button -->
-        <w3m-button></w3m-button>
-        
-        <div id="payment-section" style="display:none;">
-            <button id="payBtn" onclick="pay('0.1', 1)">Pay 0.1 USDC (1 Credit)</button>
-            <button id="payBulkBtn" onclick="pay('1.0', 10)" style="background: #4CAF50; margin-top: 10px;">Pay 1.0 USDC (10 Credits)</button>
-        </div>
-
-        <div id="status" class="status"></div>
-    </div>
-
-    <script type="module">
-        import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@4.1.11'
-        import { BrowserProvider, Contract, parseUnits } from 'https://esm.sh/ethers@6.11.1'
-
-        // 1. Your Web3Modal Configuration
-        const projectId = 'YOUR_PROJECT_ID'; // Replace with your actual Project ID from cloud.walletconnect.com if you have one, or use a demo one if available. For now using a placeholder.
-        // Note: Without a valid Project ID, some features might be limited, but basic connection often works for dev.
-        // Actually, let's use a generic one or ask user to provide one. For dev, we can try a public one or just '1'.
-        // Using a dummy ID often works for localhost but might show warnings.
-
-        const mainnet = {
-            chainId: 84532,
-            name: 'Base Sepolia',
-            currency: 'ETH',
-            explorerUrl: 'https://sepolia.basescan.org',
-            rpcUrl: 'https://sepolia.base.org'
-        }
-
-        const metadata = {
-            name: 'x402 Agent Payment',
-            description: 'Pay to access x402 Agent',
-            url: 'http://localhost:3001',
-            icons: ['https://avatars.mywebsite.com/']
-        }
-
-        const modal = createWeb3Modal({
-            ethersConfig: defaultConfig({ metadata }),
-            chains: [mainnet],
-            projectId: '3a8170812b534d0ff9d794f19a901d64', // Example Project ID (replace with yours)
-            enableAnalytics: true
-        })
-
-        // 2. App Logic
-        const USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
-        const RECEIVER_ADDRESS = "0x52d4901142e2b5680027da5eb47c86cb02a3ca81";
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const userId = urlParams.get('user');
-
-        let isConnected = false;
-
-        modal.subscribeProvider(async ({ provider, address, chainId }) => {
-            if (isConnected === !!address) return; // No change
-            isConnected = !!address;
-
-            if (isConnected) {
-                document.getElementById('payment-section').style.display = 'block';
-                console.log("Connected:", address);
-            } else {
-                document.getElementById('payment-section').style.display = 'none';
-                console.log("Disconnected");
-            }
-        });
-
-        window.pay = async (amountStr, creditAmount) => {
-            if (!userId) return showStatus("User ID missing from URL", "error");
-            
-            const btn = creditAmount === 1 ? document.getElementById('payBtn') : document.getElementById('payBulkBtn');
-            const originalText = btn.innerText;
-            btn.disabled = true;
-            btn.innerText = "Processing...";
-            showStatus("Initiating transaction...", "success");
-
-            try {
-                const walletProvider = modal.getWalletProvider();
-                if (!walletProvider) throw new Error("Wallet not connected");
-
-                const provider = new BrowserProvider(walletProvider);
-                const signer = await provider.getSigner();
-                
-                const abi = ["function transfer(address to, uint256 amount) returns (bool)"];
-                const contract = new Contract(USDC_ADDRESS, abi, signer);
-                const amountWei = parseUnits(amountStr, 6);
-
-                const tx = await contract.transfer(RECEIVER_ADDRESS, amountWei);
-                showStatus("Transaction sent! Waiting for confirmation...", "success");
-                
-                await tx.wait();
-                
-                // Notify backend
-                await fetch('/webhook', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId, txHash: tx.hash, creditAmount })
-                });
-
-                showStatus("Payment Successful! You can close this window.", "success");
-                btn.innerText = "Paid";
-            } catch (err) {
-                console.error(err);
-                showStatus("Payment failed: " + (err.reason || err.message), "error");
-                btn.disabled = false;
-                btn.innerText = originalText;
-            }
-        }
-
-        function showStatus(msg, type) {
-            const el = document.getElementById('status');
-            el.innerText = msg;
-            el.className = 'status ' + type;
-            el.style.display = 'block';
-        }
-    </script>
-</body>
-</html>
-`;
-
-
-
 export const x402Plugin: Plugin = {
     name: 'x402',
     description: 'x402 Payment Gating',
@@ -970,65 +812,8 @@ export const x402Plugin: Plugin = {
         }
         logger.info(`*** Fallback admin key: x402-admin-secret ***`);
 
-        // Start standalone payment server on port 3001
-        const PORT = 3001;
-        const server = http.createServer(async (req, res) => {
-            const parsedUrl = url.parse(req.url || '', true);
-            const path = parsedUrl.pathname;
-
-            // CORS headers
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-            res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-            if (req.method === 'OPTIONS') {
-                res.writeHead(204);
-                res.end();
-                return;
-            }
-
-            if (req.method === 'GET' && path === '/pay') {
-                logger.info('Serving payment page from standalone server');
-                res.writeHead(200, { 'Content-Type': 'text/html' });
-                res.end(PAYMENT_PAGE_HTML);
-                return;
-            }
-
-            if (req.method === 'POST' && path === '/webhook') {
-                let body = '';
-                req.on('data', chunk => {
-                    body += chunk.toString();
-                });
-                req.on('end', () => {
-                    try {
-                        const { userId, txHash, creditAmount } = JSON.parse(body);
-                        logger.info(`Received payment webhook for user ${userId}, tx: ${txHash}, credits: ${creditAmount} `);
-
-                        if (X402Service.instance) {
-                            X402Service.instance.addCredit(userId, creditAmount || 1);
-                            res.writeHead(200, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ success: true }));
-                        } else {
-                            res.writeHead(500, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ error: 'Service not ready' }));
-                        }
-                    } catch (e) {
-                        logger.error('Error processing webhook', e);
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ error: 'Invalid request' }));
-                    }
-                });
-                return;
-            }
-
-            // 404 for everything else
-            res.writeHead(404);
-            res.end('Not Found');
-        });
-
-        server.listen(PORT, () => {
-            logger.info(`*** X402 Payment Server running on port ${PORT} *** `);
-        });
+        // Start payment server on port 3001
+        startPaymentServer();
     },
 };
 
