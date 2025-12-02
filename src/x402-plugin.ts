@@ -269,13 +269,26 @@ const checkPaymentAction: Action = {
             };
         }
 
-        // Auto-detect Railway URL and generate payment link
-        const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
-            ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-            : process.env.RAILWAY_STATIC_URL
-            || 'http://localhost';
+        // Generate payment link
+        // Option 1: PAYMENT_PAGE_URL - External hosting (Vercel/Netlify)
+        // Option 2: Railway auto-detect - uses main domain + /pay route (same port, no :3001)
+        const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL;
 
-        const paymentLink = `${baseUrl}:3001/pay?user=${encodeURIComponent(userId)}`;
+        let paymentLink = '';
+        if (PAYMENT_PAGE_URL) {
+            // External payment page
+            paymentLink = PAYMENT_PAGE_URL.includes('/pay')
+                ? `${PAYMENT_PAGE_URL}?user=${encodeURIComponent(userId)}`
+                : `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
+        } else {
+            // Railway: use main domain + /pay (same port as ElizaOS server)
+            const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+                ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+                : process.env.RAILWAY_STATIC_URL
+                || 'http://localhost:3000';
+            // No port specified - uses main port
+            paymentLink = `${baseUrl}/pay?user=${encodeURIComponent(userId)}`;
+        }
 
         // Response with multi-wallet payment page (HTML link format)
         const responseText = `💰 **0.1 USDC の支払いが必要です**

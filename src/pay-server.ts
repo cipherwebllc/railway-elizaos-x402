@@ -51,11 +51,12 @@ try {
 }
 
 /**
- * Start payment server on port 3001
- * This runs alongside the main ElizaOS server
+ * Start payment server
+ * Uses PAYMENT_PORT env var (default: 3001)
+ * For Railway single-port deployment, set PAYMENT_PORT to same as main port (usually 3000)
  */
 export function startPaymentServer() {
-    const PORT = 3001;
+    const PORT = parseInt(process.env.PAYMENT_PORT || '3001', 10);
 
     const server = http.createServer((req, res) => {
         const url = new URL(req.url || '/', `http://${req.headers.host}`);
