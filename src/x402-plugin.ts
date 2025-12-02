@@ -373,7 +373,7 @@ const checkPaymentAction: Action = {
  */
 async function verifyPaymentOnChain(userId: string, txHash?: string): Promise<{ verified: boolean; amount?: string; error?: string }> {
     try {
-        const RECEIVER_ADDRESS = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+        const RECEIVER_ADDRESS = '0x52d4901142e2b5680027da5eb47c86cb02a3ca81';
         const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
         const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
 
@@ -479,7 +479,7 @@ const verifyPaymentAction: Action = {
     validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
         const text = (message.content.text || '').toLowerCase();
         return text.includes('支払いました') || text.includes('paid') || text.includes('送金') ||
-               text.includes('0x') || text.includes('トランザクション');
+            text.includes('0x') || text.includes('トランザクション');
     },
 
     handler: async (
