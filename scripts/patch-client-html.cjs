@@ -39,13 +39,17 @@ function patchHtml(htmlPath, iconPath = '/apple-touch-icon.png') {
 
     let content = fs.readFileSync(htmlPath, 'utf8');
 
+    // CooDAO icon URL - use external URL for apple-touch-icon
+    const coodaoIconUrl = 'https://dwebxr.xyz/images/coodao.png';
+
     // iOS PWA meta tags for better home screen experience
     const pwaTags = `
-    <link rel="apple-touch-icon" href="${iconPath}">
-    <link rel="apple-touch-icon-precomposed" href="${iconPath}">
+    <link rel="apple-touch-icon" sizes="180x180" href="${coodaoIconUrl}">
+    <link rel="apple-touch-icon-precomposed" sizes="180x180" href="${coodaoIconUrl}">
+    <link rel="icon" type="image/png" href="${coodaoIconUrl}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="CooDAO">`;
+    <meta name="apple-mobile-web-app-title" content="Coo">`;
 
     if (!content.includes('apple-touch-icon')) {
         // Try different injection points
