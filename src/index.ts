@@ -12,10 +12,12 @@ import { japanRegulationPlugin } from "./jp-regulation-plugin.ts";
 import { deFiYieldPlugin } from "./defi-yield-plugin.ts";
 import { exchangeMonitorPlugin } from "./exchange-monitor-plugin.ts";
 
-// 1体目: もともとの相談エージェント
+// 1体目: Dliza - 規制・税制の専門家（x402課金）
 import { character as baseCharacter } from "./character.ts";
-// 2体目: さっき作った Hyperliza用キャラ
+// 2体目: Coo - Web3戦略家（x402課金）
 import { twoCharacter } from "./two-character.ts";
+// 3体目: Aliza - アフィリエイト誘導エージェント（x402課金なし）
+import { alizaCharacter } from "./aliza-character.ts";
 
 import plugin from "./plugin.ts"; // starter plugin
 import { x402Plugin } from "./x402-plugin.ts";
@@ -59,8 +61,24 @@ const twoAgent: ProjectAgent = {
   ],
 };
 
+// 3体目: Aliza - x402課金なしでアフィリエイト誘導
+const alizaAgent: ProjectAgent = {
+  character: alizaCharacter,
+  init: async (_runtime: IAgentRuntime) => {
+    logger.info(
+      { name: alizaCharacter.name },
+      "Aliza agent initialized (no x402 payment required)",
+    );
+  },
+  plugins: [
+    // x402Pluginは含めない（課金なし）
+    newsPlugin,
+    plugin,
+  ],
+};
+
 export const project: Project = {
-  agents: [baseAgent, twoAgent], // ← ここが一番重要
+  agents: [baseAgent, twoAgent, alizaAgent],
 };
 
 export { baseCharacter as character };
