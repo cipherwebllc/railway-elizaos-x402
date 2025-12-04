@@ -43,8 +43,8 @@ export const character: Character = {
   settings: {
     secrets: {},
     avatar: 'https://dwebxr.xyz/images/dliza.png',
-    model: 'gpt-oss:120b-cloud',
-    modelProvider: 'ollama',
+    model: 'anthropic/claude-3.5-sonnet',
+    modelProvider: 'openrouter',
     mcp: {
       servers: {
         // Optional: Add more MCP servers here
