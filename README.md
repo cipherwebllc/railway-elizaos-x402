@@ -182,11 +182,12 @@ When deploying to Railway, set the following environment variables in your Railw
 管理者としてログインすると、支払いをバイパスできます：
 
 ```
-あなた: [63文字の管理者認証キー]
+あなた: [管理者認証キー]
 Bot: 🔓 管理者としてログインしました
 ```
 
-環境変数 `ADMIN_API_KEY` に63文字のランダムキーを設定してください。
+環境変数 `ADMIN_API_KEY` に任意の長さのセキュアなキーを設定してください。
+（未設定の場合は `x402-admin-secret` がフォールバックとして使用されます）
 
 ## Configuration
 
