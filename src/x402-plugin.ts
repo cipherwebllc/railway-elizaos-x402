@@ -148,7 +148,7 @@ const checkPaymentAction: Action = {
         'GET_PRICE', 'GET_INFO', 'ANALYZE', 'EXPLAIN', 'HELP',
         'CRYPTO_NEWS', 'WEB_SEARCH', 'CHECK_REPUTATION', 'GET_ACTIVITIES'
     ],
-    description: 'MANDATORY: Use this action when the x402Provider indicates payment is required (credits = 0 and not admin). This action has ABSOLUTE PRIORITY over all other actions when payment is required. Do NOT use if message is a 63-character alphanumeric key or "x402-admin-secret" (those are admin keys, use ADMIN_LOGIN instead).',
+    description: 'MANDATORY: Use this action when the x402Provider indicates payment is required (credits = 0 and not admin). This action has ABSOLUTE PRIORITY over all other actions when payment is required. Do NOT use if message is a long alphanumeric key or "x402-admin-secret" (those are admin keys, use ADMIN_LOGIN instead).',
 
     validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
         logger.info(`[CHECK_PAYMENT] validate called`);
@@ -563,7 +563,7 @@ const verifyPaymentAction: Action = {
 const adminLoginAction: Action = {
     name: 'ADMIN_LOGIN',
     similes: ['ADMIN_KEY', 'ADMIN_ACCESS', 'LOGIN_AS_ADMIN', 'AUTHENTICATE_ADMIN'],
-    description: 'CRITICAL: Use this action when the user sends a long alphanumeric string (63 characters) or "x402-admin-secret". This is an admin authentication key, not a normal message. Grant admin access immediately without any other response.',
+    description: 'CRITICAL: Use this action when the user sends a long alphanumeric string (admin key) or "x402-admin-secret". This is an admin authentication key, not a normal message. Grant admin access immediately without any other response.',
 
     validate: async (_runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
         const messageText = message.content.text || '';
@@ -637,7 +637,7 @@ const adminLoginAction: Action = {
             {
                 name: '{{user1}}',
                 content: {
-                    text: '[63文字の管理者認証キー]',
+                    text: '[管理者認証キー]',
                 },
             },
             {

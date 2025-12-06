@@ -140,7 +140,8 @@ When deploying to Railway, set the following environment variables in your Railw
 支払いシステムはRailway環境を自動検出し、すぐに使えます：
 
 1. **自動URL検出**: Railwayの環境変数から自動的にURLを生成
-2. **支払いページ**: ポート3001で自動起動（`/pay` ルート）
+2. **支払いページ**: 別リポジトリでVercel/Netlifyにデプロイ
+   - 📁 **[x402payment-page](https://github.com/cipherwebllc/x402peyment-page)**
 3. **MetaMask連携**: ワンクリックでウォレット接続・支払い
 4. **自動検証**: ブロックチェーン上でトランザクションを自動確認
 
@@ -151,7 +152,7 @@ When deploying to Railway, set the following environment variables in your Railw
    ```
    💰 0.1 USDC の支払いが必要です
 
-   👉 <a href="https://your-app.railway.app:3001/pay?user=123">支払いページへ</a>
+   👉 <a href="https://x402payment.vercel.app/pay?user=123">支払いページへ</a>
 
    💡 対応ウォレット: MetaMask / Coinbase / Rabby など
    ```
@@ -173,7 +174,7 @@ When deploying to Railway, set the following environment variables in your Railw
 | **Network** | Base Sepolia (テストネット) |
 | **Token** | USDC (`0x036CbD...`) |
 | **Amount** | 0.1 USDC = 1 クレジット |
-| **Payment Server** | ポート3001（自動起動） |
+| **Payment Page** | [x402payment-page](https://github.com/cipherwebllc/x402peyment-page) (Vercel/Netlify) |
 | **Verification** | Ethers.js v6 でブロックチェーン検証 |
 
 #### 管理者機能
@@ -181,11 +182,12 @@ When deploying to Railway, set the following environment variables in your Railw
 管理者としてログインすると、支払いをバイパスできます：
 
 ```
-あなた: [63文字の管理者認証キー]
+あなた: [管理者認証キー]
 Bot: 🔓 管理者としてログインしました
 ```
 
-環境変数 `ADMIN_API_KEY` に63文字のランダムキーを設定してください。
+環境変数 `ADMIN_API_KEY` に任意の長さのセキュアなキーを設定してください。
+（未設定の場合は `x402-admin-secret` がフォールバックとして使用されます）
 
 ## Configuration
 
