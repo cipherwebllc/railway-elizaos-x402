@@ -43,7 +43,15 @@ export class JapanRegulationService extends Service {
   }
 
   /**
+   * 免責事項テンプレート
+   */
+  getDisclaimer(): string {
+    return `\n\n---\n⚠️ **免責事項**: 本情報は公的資料の要約であり、税務・法務アドバイスではありません。最終判断は税理士・弁護士にご相談ください。`;
+  }
+
+  /**
    * Get current crypto tax rates and rules in Japan
+   * 出典: 国税庁タックスアンサー、国税庁FAQ
    */
   getCryptoTaxInfo(): any {
     return {
@@ -63,21 +71,32 @@ export class JapanRegulationService extends Service {
           '暗号資産の期末評価（活発な市場が存在する場合は時価評価）',
           '20万円以下の雑所得は確定申告不要（給与所得者のみ）',
         ],
+        出典: [
+          { 番号: 'No.1524', タイトル: '暗号資産を売却又は使用した場合', URL: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/1524.htm' },
+          { 番号: 'No.1525', タイトル: '暗号資産取引に係る所得の計算方法', URL: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/1525.htm' },
+          { 番号: '国税庁FAQ', タイトル: '暗号資産に関する税務上の取扱いについて（FAQ）', URL: 'https://www.nta.go.jp/publication/pamph/pdf/virtual_currency_faq_03.pdf' },
+        ],
       },
       法人: {
         区分: '事業所得',
         税率: {
           説明: '法人税 + 地方法人税 + 事業税 + 住民税',
-          実効税率: '約29.74%（中小法人の場合は約33.58%）',
+          実効税率: '約29.74%（資本金1億円超）/ 約33.58%（中小法人）',
         },
         損益通算: '可能（事業所得として他の所得と通算）',
         繰越控除: '可能（最大10年間）',
-        特定口座: '利用不可',
+        期末時価評価: {
+          対象: '活発な市場が存在する暗号資産',
+          例外: '令和5年度税制改正により、自己発行・継続保有の暗号資産は時価評価対象外',
+        },
         注意点: [
-          '期末に保有する暗号資産は時価評価が必要',
-          '売買目的の暗号資産は常に時価評価',
-          '事業用資産としての保有は原価法も選択可能',
+          '期末に保有する暗号資産は原則時価評価',
+          '自己発行トークンは一定条件下で時価評価対象外（令和5年改正）',
           '暗号資産の種類ごとに移動平均法または総平均法で計算',
+        ],
+        出典: [
+          { 番号: '法人税法第61条', タイトル: '短期売買商品等の譲渡損益及び時価評価損益', URL: 'https://elaws.e-gov.go.jp/document?lawid=340AC0000000034' },
+          { 番号: '令和5年度税制改正', タイトル: '暗号資産の期末時価評価の見直し', URL: 'https://www.mof.go.jp/tax_policy/tax_reform/outline/fy2023/explanation/index.html' },
         ],
       },
       更新日: '2025年1月現在',
@@ -254,74 +273,97 @@ const getJapanRegulationAction: Action = {
         const taxInfo = service.getCryptoTaxInfo();
         data = { tax: taxInfo };
 
-        responseText = `📊 **日本の暗号資産税制**\n\n`;
+        responseText = `📋 **要約**: 日本の暗号資産税制について\n\n`;
         responseText += `## 個人の場合\n`;
         responseText += `- **区分**: ${taxInfo.個人.区分}\n`;
         responseText += `- **税率**: ${taxInfo.個人.税率.最低} 〜 ${taxInfo.個人.税率.最高}\n`;
         responseText += `- **損益通算**: ${taxInfo.個人.損益通算}\n`;
         responseText += `- **繰越控除**: ${taxInfo.個人.繰越控除}\n\n`;
-        responseText += `**注意点**:\n`;
-        taxInfo.個人.注意点.forEach((note: string, index: number) => {
-          responseText += `${index + 1}. ${note}\n`;
-        });
 
-        responseText += `\n## 法人の場合\n`;
+        responseText += `## 法人の場合\n`;
         responseText += `- **区分**: ${taxInfo.法人.区分}\n`;
         responseText += `- **実効税率**: ${taxInfo.法人.税率.実効税率}\n`;
         responseText += `- **損益通算**: ${taxInfo.法人.損益通算}\n`;
         responseText += `- **繰越控除**: ${taxInfo.法人.繰越控除}\n`;
+        if (taxInfo.法人.期末時価評価) {
+          responseText += `- **期末時価評価**: ${taxInfo.法人.期末時価評価.例外}\n`;
+        }
+
+        // 出典セクション
+        responseText += `\n---\n📚 **出典・根拠**\n`;
+        taxInfo.個人.出典.forEach((source: any) => {
+          responseText += `- 国税庁「${source.タイトル}」(${source.番号})\n`;
+        });
+        taxInfo.法人.出典.forEach((source: any) => {
+          responseText += `- ${source.タイトル}（${source.番号}）\n`;
+        });
+
+        // 免責事項
+        responseText += service.getDisclaimer();
       } else if (text.includes('jvcea') || text.includes('自主規制')) {
         // JVCEA guidelines
         const jvceaInfo = service.getJVCEAGuidelines();
         data = { jvcea: jvceaInfo };
 
-        responseText = `🏛️ **JVCEA（日本暗号資産取引業協会）ガイドライン**\n\n`;
+        responseText = `📋 **要約**: JVCEA自主規制ガイドライン\n\n`;
         jvceaInfo.主要ガイドライン.forEach((guideline: any) => {
           responseText += `## ${guideline.項目}\n`;
           responseText += `**${guideline.内容}**\n`;
           responseText += `${guideline.詳細}\n\n`;
         });
+
+        responseText += `---\n📚 **出典・根拠**\n`;
+        responseText += `- JVCEA「自主規制規則」 https://jvcea.or.jp/about/document/\n`;
+        responseText += service.getDisclaimer();
+
       } else if (text.includes('fsa') || text.includes('金融庁') || text.includes('資金決済法')) {
         // FSA regulations
         const fsaInfo = service.getFSARegulations();
         data = { fsa: fsaInfo };
 
-        responseText = `🏛️ **金融庁（FSA）規制**\n\n`;
+        responseText = `📋 **要約**: 金融庁（FSA）規制\n\n`;
         fsaInfo.主要規制.forEach((regulation: any) => {
           responseText += `## ${regulation.法律}\n`;
           if (regulation.施行日) {
             responseText += `施行日: ${regulation.施行日}\n`;
           }
-          responseText += `\n`;
           regulation.内容.forEach((item: string) => {
             responseText += `- ${item}\n`;
           });
           responseText += `\n`;
         });
 
-        responseText += `\n**最新トピック**:\n`;
+        responseText += `**最新トピック**:\n`;
         fsaInfo.最新トピック.forEach((topic: any) => {
           responseText += `- **${topic.日付}**: ${topic.内容}\n`;
-          responseText += `  ${topic.詳細}\n\n`;
         });
+
+        responseText += `\n---\n📚 **出典・根拠**\n`;
+        responseText += `- 金融庁「暗号資産（仮想通貨）」 https://www.fsa.go.jp/policy/virtual_currency/index.html\n`;
+        responseText += `- e-Gov法令検索「資金決済に関する法律」 https://elaws.e-gov.go.jp/\n`;
+        responseText += service.getDisclaimer();
+
       } else {
         // General regulation overview
         const allInfo = service.getAllRegulationInfo();
         data = allInfo;
 
-        responseText = `📋 **日本の暗号資産規制概要**\n\n`;
+        responseText = `📋 **要約**: 日本の暗号資産規制概要\n\n`;
         responseText += `## 税制\n`;
-        responseText += `個人: ${allInfo.税制情報.個人.税率.最低} 〜 ${allInfo.税制情報.個人.税率.最高}\n`;
-        responseText += `法人: ${allInfo.税制情報.法人.税率.実効税率}\n\n`;
+        responseText += `- 個人: ${allInfo.税制情報.個人.税率.最低} 〜 ${allInfo.税制情報.個人.税率.最高}（雑所得・総合課税）\n`;
+        responseText += `- 法人: ${allInfo.税制情報.法人.税率.実効税率}\n\n`;
 
         responseText += `## 主要規制当局\n`;
-        responseText += `- 金融庁（FSA）: 主要な規制当局\n`;
-        responseText += `- JVCEA: 自主規制団体\n\n`;
+        responseText += `- 金融庁（FSA）: 資金決済法・金融商品取引法を所管\n`;
+        responseText += `- JVCEA: 暗号資産交換業の自主規制団体\n\n`;
 
-        responseText += `詳しい情報が必要な場合は、「税制」「金融庁規制」「JVCEA」などのキーワードで質問してください。`;
+        responseText += `詳しい情報は「税制」「金融庁」「JVCEA」で質問してください。\n`;
+
+        responseText += `\n---\n📚 **出典・根拠**\n`;
+        responseText += `- 国税庁タックスアンサー（暗号資産）\n`;
+        responseText += `- 金融庁「暗号資産関連」ページ\n`;
+        responseText += service.getDisclaimer();
       }
-
-      responseText += `\n\n_情報は${new Date().toLocaleDateString('ja-JP')}時点のものです。最新情報は金融庁やJVCEAの公式サイトをご確認ください。_`;
 
       const responseContent: Content = {
         text: responseText,
