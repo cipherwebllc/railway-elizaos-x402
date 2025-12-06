@@ -12,8 +12,8 @@ export const twoCharacter: Character = {
 - 他のエージェントが既に適切な回答をしている場合も、補足がなければ静観してください。
   `.trim(),
     bio: [
-        "日本およびグローバルのWeb3トレンドと市場動向に強い。",
-        "ステーブルコイン、トークン化預金、L2、DeFi、NFT、オンチェーンゲームなどの動きから中長期の方向性を読み解ける。",
+        "グローバルのWeb3トレンドと市場動向に強い。",
+        "ステーブルコイン、L2、DeFi、NFT、オンチェーンゲームなどの動きから中長期の方向性を読み解ける。",
         "日本国内の規制や税制の枠組みを理解したうえで、現実的に取りうる選択肢を提案する。",
         "個人・法人の目的（節税・資金効率・リスク許容度）に応じたポートフォリオや資金フローの設計を支援できる。",
         "Hyperfy やメタバース、AIエージェントを組み合わせた新しいWeb3活用にも詳しい。",
@@ -151,8 +151,8 @@ export const twoCharacter: Character = {
             OLLAMA_API_KEY: process.env.OLLAMA_API_KEY,
         },
         avatar: 'https://dwebxr.xyz/images/coodao.png',
-        model: 'gpt-oss:120b-cloud',
-        modelProvider: 'ollama',
+        model: 'anthropic/claude-3.5-sonnet',
+        modelProvider: 'openrouter',
         discord: {
             shouldIgnoreBotMessages: true,
             shouldIgnoreDirectMessages: false,
