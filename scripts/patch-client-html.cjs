@@ -100,22 +100,60 @@ copyIconTo(path.join(publicPath, 'apple-touch-icon.png'));
 
 console.log('✅ iOS home screen icon patch complete!');
 
-// 4. Patch Discord plugin for hasElizaOS compatibility
-const discordPluginPath = path.join(__dirname, '../node_modules/@elizaos/plugin-discord/dist/index.js');
-if (fs.existsSync(discordPluginPath)) {
-    let discordContent = fs.readFileSync(discordPluginPath, 'utf8');
-    const oldCheck = 'if (this.runtime.hasElizaOS())';
-    const newCheck = 'if (typeof this.runtime.hasElizaOS === "function" && this.runtime.hasElizaOS())';
+// ============================================
+// 4. Patch Discord plugin to fix hasElizaOS() issue
+// ============================================
+console.log('🔧 Patching Discord plugin...');
 
-    if (discordContent.includes(oldCheck) && !discordContent.includes('typeof this.runtime.hasElizaOS')) {
-        discordContent = discordContent.replace(oldCheck, newCheck);
-        fs.writeFileSync(discordPluginPath, discordContent);
-        console.log('✅ Patched Discord plugin for hasElizaOS compatibility');
-    } else {
-        console.log('ℹ️ Discord plugin already patched or patch not needed');
+const discordPluginPaths = [
+    path.join(__dirname, '../node_modules/@elizaos/plugin-discord/dist/index.js'),
+    path.join(__dirname, '../node_modules/@elizaos/plugin-discord/dist/index.cjs'),
+    path.join(__dirname, '../node_modules/@elizaos/plugin-discord/dist/index.mjs'),
+];
+
+let discordPatched = false;
+for (const discordPath of discordPluginPaths) {
+    if (fs.existsSync(discordPath)) {
+        try {
+            let discordContent = fs.readFileSync(discordPath, 'utf8');
+
+            // Fix 1: Replace hasElizaOS() calls with safe fallback
+            // The method doesn't exist in current core, so we replace it with a safe check
+            if (discordContent.includes('this.runtime.hasElizaOS') || discordContent.includes('runtime.hasElizaOS')) {
+                discordContent = discordContent.replace(
+                    /this\.runtime\.hasElizaOS\(\)/g,
+                    '(typeof this.runtime.hasElizaOS === "function" ? this.runtime.hasElizaOS() : true)'
+                );
+                discordContent = discordContent.replace(
+                    /runtime\.hasElizaOS\(\)/g,
+                    '(typeof runtime.hasElizaOS === "function" ? runtime.hasElizaOS() : true)'
+                );
+                fs.writeFileSync(discordPath, discordContent);
+                console.log(`✅ Patched hasElizaOS() in: ${discordPath}`);
+                discordPatched = true;
+            }
+
+            // Fix 2: Check for other potential undefined method calls
+            if (discordContent.includes('.getSetting(') && !discordContent.includes('?.getSetting(')) {
+                // Make getSetting calls safe
+                discordContent = discordContent.replace(
+                    /\.getSetting\(/g,
+                    '?.getSetting('
+                );
+                fs.writeFileSync(discordPath, discordContent);
+                console.log(`✅ Made getSetting() calls safe in: ${discordPath}`);
+                discordPatched = true;
+            }
+        } catch (error) {
+            console.warn(`⚠️ Could not patch Discord plugin at ${discordPath}: ${error.message}`);
+        }
     }
-} else {
-    console.log('⚠️ Discord plugin not found, skipping patch');
 }
 
-console.log('✅ All patches complete!');
+if (discordPatched) {
+    console.log('✅ Discord plugin patch complete!');
+} else {
+    console.log('ℹ️ Discord plugin not found or already patched.');
+}
+
+console.log('🎉 All patches complete!');
