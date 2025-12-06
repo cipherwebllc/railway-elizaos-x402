@@ -99,3 +99,23 @@ if (!fs.existsSync(publicPath)) {
 copyIconTo(path.join(publicPath, 'apple-touch-icon.png'));
 
 console.log('✅ iOS home screen icon patch complete!');
+
+// 4. Patch Discord plugin for hasElizaOS compatibility
+const discordPluginPath = path.join(__dirname, '../node_modules/@elizaos/plugin-discord/dist/index.js');
+if (fs.existsSync(discordPluginPath)) {
+    let discordContent = fs.readFileSync(discordPluginPath, 'utf8');
+    const oldCheck = 'if (this.runtime.hasElizaOS())';
+    const newCheck = 'if (typeof this.runtime.hasElizaOS === "function" && this.runtime.hasElizaOS())';
+
+    if (discordContent.includes(oldCheck) && !discordContent.includes('typeof this.runtime.hasElizaOS')) {
+        discordContent = discordContent.replace(oldCheck, newCheck);
+        fs.writeFileSync(discordPluginPath, discordContent);
+        console.log('✅ Patched Discord plugin for hasElizaOS compatibility');
+    } else {
+        console.log('ℹ️ Discord plugin already patched or patch not needed');
+    }
+} else {
+    console.log('⚠️ Discord plugin not found, skipping patch');
+}
+
+console.log('✅ All patches complete!');
