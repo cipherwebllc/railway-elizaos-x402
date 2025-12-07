@@ -162,7 +162,7 @@ When deploying to Railway, set the following environment variables in your Railw
    - 🔗 WalletConnect（開発中）
    - 💙 Coinbase Wallet
    - 🐰 Rabby Wallet
-5. **ウォレット接続** → 自動的に Base Sepolia に切り替え
+5. **ウォレット接続** → 自動的に Base に切り替え
 6. **0.1 USDC 支払い** → トランザクション確認
 7. **「支払いました」** または txハッシュ送信
 8. **Bot が自動検証** → 質問に回答 ✨
@@ -171,8 +171,8 @@ When deploying to Railway, set the following environment variables in your Railw
 
 | 項目 | 詳細 |
 |------|------|
-| **Network** | Base Sepolia (テストネット) |
-| **Token** | USDC (`0x036CbD...`) |
+| **Network** | Base Mainnet |
+| **Token** | USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) |
 | **Amount** | 0.1 USDC = 1 クレジット |
 | **Payment Page** | [x402payment-page](https://github.com/cipherwebllc/x402peyment-page) (Vercel/Netlify) |
 | **Verification** | Ethers.js v6 でブロックチェーン検証 |
