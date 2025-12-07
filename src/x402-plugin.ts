@@ -302,7 +302,7 @@ const checkPaymentAction: Action = {
 • または「支払いました」と送信
 
 📝 User ID: \`${userId}\`
-🌐 Network: Base Sepolia`;
+🌐 Network: Base`;
 
         const responseContent: Content = {
             text: responseText,
@@ -369,13 +369,13 @@ const checkPaymentAction: Action = {
 };
 
 /**
- * Helper function to verify payment on Base Sepolia blockchain
+ * Helper function to verify payment on Base Mainnet blockchain
  */
 async function verifyPaymentOnChain(userId: string, txHash?: string): Promise<{ verified: boolean; amount?: string; error?: string }> {
     try {
         const RECEIVER_ADDRESS = '0x52d4901142e2b5680027da5eb47c86cb02a3ca81';
-        const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-        const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
+        const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+        const RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org';
 
         const provider = new ethers.JsonRpcProvider(RPC_URL);
 
@@ -469,7 +469,7 @@ async function verifyPaymentOnChain(userId: string, txHash?: string): Promise<{ 
 
 /**
  * Action: Verify Payment (Blockchain-verified)
- * Automatically verifies payment on Base Sepolia blockchain
+ * Automatically verifies payment on Base Mainnet blockchain
  */
 const verifyPaymentAction: Action = {
     name: 'VERIFY_PAYMENT',
@@ -525,7 +525,7 @@ const verifyPaymentAction: Action = {
             };
         } else {
             const responseContent: Content = {
-                text: `❌ お支払いを確認できませんでした。\n\n理由: ${result.error}\n\n💡 ヒント:\n- トランザクションハッシュを含めて送信してください\n- 支払い後、数分待ってから再試行してください\n- 正しいアドレスとネットワーク(Base Sepolia)を確認してください`,
+                text: `❌ お支払いを確認できませんでした。\n\n理由: ${result.error}\n\n💡 ヒント:\n- トランザクションハッシュを含めて送信してください\n- 支払い後、数分待ってから再試行してください\n- 正しいアドレスとネットワーク(Base)を確認してください`,
                 source: message.content.source,
             };
 
