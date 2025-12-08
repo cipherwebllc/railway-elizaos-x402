@@ -1,54 +1,14 @@
 /**
  * Payment Server for X402
- * Serves the payment page on /pay route
+ * Redirects to external payment page
  * This integrates with ElizaOS server on the main port
  */
 
 import { logger } from '@elizaos/core';
 import http from 'http';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Read payment page HTML
-let PAYMENT_PAGE_HTML = '';
-try {
-    // Try multiple possible paths (dist, src, root)
-    const possiblePaths = [
-        path.join(__dirname, '../payment-page/index.html'),           // From dist/
-        path.join(__dirname, '../../payment-page/index.html'),        // From dist/src/
-        path.join(process.cwd(), 'payment-page/index.html'),          // From project root
-    ];
-
-    let loaded = false;
-    for (const paymentPagePath of possiblePaths) {
-        if (fs.existsSync(paymentPagePath)) {
-            PAYMENT_PAGE_HTML = fs.readFileSync(paymentPagePath, 'utf-8');
-            logger.info(`✅ Payment page loaded from: ${paymentPagePath}`);
-            loaded = true;
-            break;
-        }
-    }
-
-    if (!loaded) {
-        throw new Error(`Payment page not found in any of: ${possiblePaths.join(', ')}`);
-    }
-} catch (error) {
-    logger.error('❌ Failed to load payment page HTML:', error);
-    PAYMENT_PAGE_HTML = `
-<!DOCTYPE html>
-<html>
-<head><title>Payment Page Error</title></head>
-<body>
-    <h1>Payment page not found</h1>
-    <p>Please contact the administrator.</p>
-    <p>Error: ${error instanceof Error ? error.message : String(error)}</p>
-</body>
-</html>`;
-}
+// External payment page URL
+const EXTERNAL_PAYMENT_PAGE = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
 
 /**
  * Start payment server
@@ -86,11 +46,16 @@ export function startPaymentServer() {
             return;
         }
 
-        // Serve payment page
+        // Redirect to external payment page
         if (req.method === 'GET' && url.pathname === '/pay') {
-            logger.info(`Payment page accessed: ${url.href}`);
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(PAYMENT_PAGE_HTML);
+            const queryString = url.search || '';
+            const redirectUrl = `${EXTERNAL_PAYMENT_PAGE}/pay${queryString}`;
+            logger.info(`Redirecting to external payment page: ${redirectUrl}`);
+            res.writeHead(302, {
+                'Location': redirectUrl,
+                'Cache-Control': 'no-cache'
+            });
+            res.end();
             return;
         }
 
@@ -101,7 +66,7 @@ export function startPaymentServer() {
 
     server.listen(PORT, '0.0.0.0', () => {
         logger.info(`🌐 Payment server running on http://0.0.0.0:${PORT}`);
-        logger.info(`📄 Payment page available at: http://localhost:${PORT}/pay`);
+        logger.info(`📄 Payment redirects to: ${EXTERNAL_PAYMENT_PAGE}/pay`);
     });
 
     server.on('error', (error: NodeJS.ErrnoException) => {
