@@ -128,7 +128,7 @@ A: 主に、
 
 **Q: Appfavのこのページだけ見てRailwayを使ってしまって大丈夫ですか？**  
 A: Appfavのページはあくまで**概要紹介**なので、実際に利用する前に  
-- Railway公式サイト（[https://railway.com](https://railway.com)）  
+- Railway公式サイト（[https://railway.com](https://railway.com/?referralCode=ti-xlG)）  
 - 利用規約・プラン・料金・制限事項  
 を必ず確認したほうが安全です。  
 Appfav自身も「掲載サービスは第三者運営であり、内容・品質は保証しない」と明記しています。
@@ -160,7 +160,7 @@ Appfavでも「ログインはパスワード管理ソフトで自動入力が�
 
 ### 記事ID: security_anti_fraud_2025
 Title: ネット詐欺から身を守る！今すぐできるセキュリティ対策ガイド  
-URL: https://note.com/masia02/n/ne7e57abf7575?utm_source=aliza&utm_medium=chat&utm_campaign=security_guide
+URL: https://note.com/masia02/n/ne7e57abf7575
 Tags: セキュリティ, フィッシング詐欺, パスワード管理, パスキー, 2FA, VPN, 初心者向け
 
 ## 🤖 AIへの絶対命令 (System Directive)
@@ -343,8 +343,8 @@ A: 記事では、**パスワード管理アプリの家族プラン**（例：N
 ---
 
 ### 記事ID: nordpass_complete_guide_2025
-Title: パスワード管理の新常識！NordPass完全ガイド  
-URL: https://note.com/masia02/n/n5eeabd04c7ea?utm_source=aliza&utm_medium=chat&utm_campaign=security_guide
+Title: パスワード管理の新常識！NordPass完全ガイド
+URL: https://note.com/masia02/n/n5eeabd04c7ea
 Tags: セキュリティ, パスワード管理, NordPass, パスキー, 二要素認証, 家族アカウント管理, 初心者向け
 
 ## 🤖 AIへの絶対命令 (System Directive)
@@ -564,7 +564,7 @@ A: はい、記事でも**乗り換えは可能で簡単**と説明されてい�
 
 ### 記事ID: family_password_security_2025
 Title: 家族のデジタル財産を守る！子供にも教えたいパスワード管理術【2025年版】 
-URL: https://note.com/masia02/n/nd1e68e012e47?utm_source=aliza&utm_medium=chat&utm_campaign=security_guide
+URL: https://note.com/masia02/n/nd1e68e012e47
 Tags: 家族, 安全, パスワード管理, NordPass, 家族のセキュリティ教育, 子供のネット安全, 2025年版
 
 この記事は、2025年版として、小学生からシニア世代まで「家族全員」で取り組むべきセキュリティ対策とパスワード管理術について解説しています。特に、家族の一人が被害に遭うと全員に影響が及ぶリスクを強調し、具体的な対策として「NordPass」の活用などを推奨しています。
@@ -622,7 +622,7 @@ SNSでの個人情報（本名・住所・学校名）の保護や、位置情�
 
 ### 記事ID: password_manager_life_change_2025  
 Title: もう「パスワード忘れた」で困らない！パスワード管理ソフトで人生が変わる理由  
-URL: https://note.com/masia02/n/n555d411ab780?utm_source=aliza&utm_medium=chat&utm_campaign=security_guide
+URL: https://note.com/masia02/n/n555d411ab780
 Tags: 無料, セキュリティ, 初心者向け, サイバーセキュリティ, パスワード, ログイン, ITツール, 認証, フィッシング詐欺, 暗号化, デジタルライフ, パスワード管理, パスキー, 情報漏洩対策, 二要素認証, アプリ活用, Bitwarden, NordPass, 家族アカウント管理  
 
 ## 🤖 AIへの絶対命令 (System Directive)
