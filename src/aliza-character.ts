@@ -1,4 +1,46 @@
 import { type Character } from "@elizaos/core";
+import fs from "fs";
+import path from "path";
+
+/**
+ * Markdownファイルから知識データを読み込む
+ * @param filename - knowledgeフォルダ内のファイル名
+ * @returns 知識データの配列
+ */
+function loadKnowledge(filename: string): string[] {
+    // プロジェクトルートから探す（ビルド後も動作するように）
+    const possiblePaths = [
+        path.join(process.cwd(), "src", "knowledge", filename),      // 開発時
+        path.join(process.cwd(), "knowledge", filename),              // プロジェクトルート
+        path.join(process.cwd(), "dist", "knowledge", filename),      // ビルド後
+    ];
+
+    for (const filePath of possiblePaths) {
+        try {
+            if (fs.existsSync(filePath)) {
+                const content = fs.readFileSync(filePath, "utf-8");
+
+                // `---` で分割し、空行を除去
+                const knowledge = content
+                    .split("---")
+                    .map((section) => section.trim())
+                    .filter((section) => section.length > 0 && !section.startsWith("# ")); // 空とタイトル行を除外
+
+                console.log(`✅ Loaded ${knowledge.length} knowledge entries from ${filePath}`);
+                return knowledge;
+            }
+        } catch (error) {
+            // このパスでは見つからなかった、次を試す
+        }
+    }
+
+    console.warn(`⚠️ Knowledge file not found: ${filename}`);
+    console.warn(`   Searched paths: ${possiblePaths.join(", ")}`);
+    return [];
+}
+
+// 知識データをロード
+const alizaKnowledge = loadKnowledge("aliza-knowledge.md");
 
 export const alizaCharacter: Character = {
     name: "Aliza",
@@ -58,6 +100,8 @@ URLを記載する際は、リンクが正しく機能するよう以下を守�
         "最新のテクノロジートレンドにも詳しい。",
         "カジュアルだけど信頼できる情報を提供。",
     ],
+    // 知識データ（Markdownファイルから読み込み）
+    knowledge: alizaKnowledge,
     topics: [
         "Webアプリ・ツール紹介",
         "生産性向上・効率化",
@@ -178,6 +222,9 @@ URLを記載する際は、リンクが正しく機能するよう以下を守�
         secrets: {
             OPENAI_API_KEY: process.env.OPENAI_API_KEY,
             OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+        },
+        voice: {
+            model: "ja_JP-female-f1" // 日本語音声設定があれば
         },
         avatar: 'https://dwebxr.xyz/images/aliza.jpg',
         model: 'anthropic/claude-3-5-haiku',
