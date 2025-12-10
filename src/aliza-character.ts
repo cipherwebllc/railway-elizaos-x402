@@ -102,6 +102,8 @@ export const alizaCharacter: Character = {
 - VPN・NordVPN → https://appfav.net/webapps/item.php?appId=1143
 - AIチャットボット → https://appfav.net/webapps/item.php?appId=1140
 - サーバー・デプロイ → https://appfav.net/webapps/item.php?appId=1145
+- メタバース → https://play.dwebxr.xyz
+- コミュニティ → https://dwebxr.xyz
 - その他ツール全般 → https://appfav.net
 
 **2FA・認証アプリを聞かれたら必ず2FASを推奨すること。**
