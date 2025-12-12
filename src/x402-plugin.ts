@@ -1,8 +1,9 @@
-import type { Plugin, Evaluator } from '@elizaos/core';
+import type { Plugin } from '@elizaos/core';
 import {
     type Action,
     type ActionResult,
     type Content,
+    type Evaluator,
     type HandlerCallback,
     type IAgentRuntime,
     type Memory,
@@ -354,20 +355,55 @@ setInterval(() => {
 }, 60 * 1000);
 
 function extractUserId(message: Memory): string {
-    const directUserId = (message as any).userId ||
-        (message as any).authorId ||
-        (message as any).author_id ||
-        (message.content as any)?.sourceId ||
-        (message.metadata as any)?.sourceId ||
-        (message.metadata as any)?.raw?.senderId;
+    // Log ALL possible user ID sources for debugging
+    const sources = {
+        userId: (message as any).userId,
+        authorId: (message as any).authorId,
+        author_id: (message as any).author_id,
+        contentSourceId: (message.content as any)?.sourceId,
+        metadataSourceId: (message.metadata as any)?.sourceId,
+        rawSenderId: (message.metadata as any)?.raw?.senderId,
+        roomId: message.roomId,
+        entityId: (message as any).entityId,
+        agentId: (message as any).agentId,
+    };
 
-    if (directUserId) {
-        logger.info(`[X402] extractUserId: Found direct userId: ${directUserId}`);
-        return directUserId;
+    logger.info(`[X402] extractUserId - All sources: ${JSON.stringify(sources)}`);
+
+    // IMPORTANT: For web client (REST API), the userId field is actually the messageId
+    // which changes every message. We need to use roomId as the persistent identifier.
+    // Only use authorId/author_id if they look like actual user identifiers (not UUIDs that change)
+
+    // For Telegram/Discord, use the actual sender ID from metadata
+    const telegramSenderId = sources.rawSenderId;
+    if (telegramSenderId && typeof telegramSenderId === 'number') {
+        logger.info(`[X402] extractUserId: Using Telegram senderId: ${telegramSenderId}`);
+        return String(telegramSenderId);
     }
 
-    logger.info(`[X402] extractUserId: Using roomId as fallback: ${message.roomId}`);
-    return message.roomId;
+    // For platforms with stable author ID (not web client)
+    const stableAuthorId = sources.authorId || sources.author_id;
+    if (stableAuthorId && sources.roomId && stableAuthorId !== sources.roomId) {
+        // Check if authorId is different from roomId - might be a real user ID
+        // But for web client, authorId often equals messageId, so skip if it looks like a UUID
+        const isUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!isUuidPattern.test(stableAuthorId)) {
+            logger.info(`[X402] extractUserId: Using stable authorId: ${stableAuthorId}`);
+            return stableAuthorId;
+        }
+    }
+
+    // For web client: use roomId as the persistent identifier
+    // This represents the conversation/chat session
+    if (sources.roomId) {
+        logger.info(`[X402] extractUserId: Using roomId as persistent identifier: ${sources.roomId}`);
+        return sources.roomId;
+    }
+
+    // Fallback
+    const fallback = sources.userId || sources.entityId || 'unknown';
+    logger.info(`[X402] extractUserId: Using fallback: ${fallback}`);
+    return fallback;
 }
 
 function getMessageKey(message: Memory): string {
@@ -933,14 +969,97 @@ Instead, respond ONLY with this exact payment message:
 };
 
 // ============================================
+// Evaluator - CRITICAL: Intercepts ALL responses to enforce payment gate
+// ============================================
+const x402PaymentGateEvaluator: Evaluator = {
+    name: 'x402PaymentGateEvaluator',
+    description: 'Enforces payment gate by intercepting responses when user has no access',
+    similes: ['PAYMENT_GATE', 'ACCESS_CONTROL'],
+    alwaysRun: true, // Always run this evaluator
+
+    validate: async (runtime: IAgentRuntime, message: Memory, _state?: State): Promise<boolean> => {
+        // Always validate - we need to check every message
+        const service = runtime.getService<X402Service>('x402');
+        if (!service) {
+            logger.warn('[X402_EVALUATOR] No x402 service found');
+            return false;
+        }
+
+        const text = (message.content.text || '').toLowerCase();
+
+        // Skip for special messages
+        if (text.includes('支払いました') || text.includes('paid') || text.includes('0x') ||
+            text.includes('ステータス') || text.includes('status') ||
+            text.includes('admin logout') || text.includes('adminログアウト')) {
+            return false;
+        }
+
+        // Check admin key
+        const envKey = process.env.ADMIN_API_KEY;
+        const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
+        if ((envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret') {
+            return false;
+        }
+
+        const userId = extractUserId(message);
+        const access = service.canAccess(userId);
+        const agentName = runtime.character?.name || 'unknown';
+
+        // Only run evaluator if user does NOT have access
+        const shouldRun = !access.allowed;
+        logger.info(`[X402_EVALUATOR:${agentName}] User ${userId}: allowed=${access.allowed}, shouldRun=${shouldRun}`);
+
+        return shouldRun;
+    },
+
+    handler: async (runtime: IAgentRuntime, message: Memory, _state?: State): Promise<any> => {
+        const service = runtime.getService<X402Service>('x402');
+        if (!service) return null;
+
+        const userId = extractUserId(message);
+        const agentName = runtime.character?.name || 'unknown';
+        const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
+
+        logger.info(`[X402_EVALUATOR:${agentName}] 🚫 BLOCKING RESPONSE - User ${userId} has no access`);
+
+        const paymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
+        const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
+
+        // Return the payment required message - this should replace the agent's response
+        return {
+            text: `💰 **ご利用には支払いが必要です**
+
+🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
+
+📦 **料金プラン**
+• 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
+
+👉 <a href="${paymentLink}">単発購入 (${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC)</a>
+👉 <a href="${proPaymentLink}">Pro購入 (${CONFIG.PRO_PRICE_USDC} USDC)</a>
+
+✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください
+
+🌐 Network: Base | Token: USDC`,
+            shouldBlock: true,
+            action: 'BLOCK_RESPONSE'
+        };
+    },
+
+    examples: []
+};
+
+// ============================================
 // Plugin Export
 // ============================================
 export const x402Plugin: Plugin = {
     name: 'x402',
     description: 'x402 Payment Gating with SQLite persistence (Free/Pro/Credits) - using sql.js (pure JS)',
     services: [X402Service],
-    actions: [adminLoginAction, adminLogoutAction, statusAction, verifyPaymentAction, checkPaymentAction],
+    // CHECK_PAYMENT must be FIRST to intercept messages when no access
+    actions: [checkPaymentAction, adminLoginAction, adminLogoutAction, statusAction, verifyPaymentAction],
     providers: [x402Provider],
+    evaluators: [x402PaymentGateEvaluator],
     init: async (_config: Record<string, string>) => {
         logger.info('*** X402 Plugin Initialized (sql.js - pure JS, no native bindings) ***');
         logger.info(`*** Free: ${CONFIG.FREE_DAILY_LIMIT}/day | Single: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC | Pro: ${CONFIG.PRO_PRICE_USDC} USDC/${CONFIG.PRO_DURATION_DAYS}days ***`);
