@@ -151,8 +151,8 @@ export const twoCharacter: Character = {
             OLLAMA_API_KEY: process.env.OLLAMA_API_KEY,
         },
         avatar: 'https://dwebxr.xyz/images/coodao.png',
-        model: 'gpt-oss:120b-cloud',
-        modelProvider: 'ollama',
+        model: 'anthropic/claude-3.5-sonnet',
+        modelProvider: 'openrouter',
         discord: {
             shouldIgnoreBotMessages: true,
             shouldIgnoreDirectMessages: false,
