@@ -153,17 +153,11 @@ export const twoCharacter: Character = {
         avatar: 'https://dwebxr.xyz/images/coodao.png',
         model: 'anthropic/claude-3.5-sonnet',
         modelProvider: 'openrouter',
-        discord: {
-            shouldIgnoreBotMessages: true,
-            shouldIgnoreDirectMessages: false,
-            shouldRespondOnlyToMentions: false,
-        },
     },
     plugins: [
         // Core plugins first
         '@elizaos/plugin-sql',
-        // Platform plugins
-        ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
+        // Platform plugins (Discord removed for Railway - run locally instead)
 
         // Embedding-capable plugins (optional, based on available credentials)
         ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
@@ -181,7 +175,6 @@ export const twoCharacter: Character = {
         // Bootstrap plugin
         ...(!process.env.IGNORE_BOOTSTRAP ? ['@elizaos/plugin-bootstrap'] : []),
 
-        // Twitter plugin (for Coo's autonomous posting and mentions)
-        ...(process.env.TWITTER_USERNAME?.trim() ? ['@elizaos/plugin-twitter'] : []),
+        // Twitter plugin removed for Railway - run locally instead
     ],
 };
