@@ -12,7 +12,7 @@ import {
     logger,
 } from '@elizaos/core';
 import { ethers } from 'ethers';
-import Database from 'better-sqlite3';
+import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import path from 'path';
 import fs from 'fs';
 import { startPaymentServer } from './pay-server.ts';
@@ -32,22 +32,21 @@ const CONFIG = {
 };
 
 // ============================================
-// SQLite Database Manager
+// SQLite Database Manager (using sql.js - pure JS, no native bindings)
 // ============================================
 class X402Database {
-    private db: Database.Database;
+    private db: SqlJsDatabase | null = null;
+    private dbPath: string;
     private static instance: X402Database | null = null;
+    private initialized: boolean = false;
+    private initPromise: Promise<void> | null = null;
 
     constructor() {
         // Ensure data directory exists
         if (!fs.existsSync(CONFIG.DB_DIR)) {
             fs.mkdirSync(CONFIG.DB_DIR, { recursive: true });
         }
-
-        const dbPath = path.join(CONFIG.DB_DIR, 'x402.db');
-        this.db = new Database(dbPath);
-        this.initSchema();
-        logger.info(`[X402DB] Database initialized at: ${dbPath}`);
+        this.dbPath = path.join(CONFIG.DB_DIR, 'x402.db');
     }
 
     static getInstance(): X402Database {
@@ -57,8 +56,42 @@ class X402Database {
         return X402Database.instance;
     }
 
+    async init(): Promise<void> {
+        if (this.initialized) return;
+        if (this.initPromise) return this.initPromise;
+
+        this.initPromise = this._init();
+        await this.initPromise;
+    }
+
+    private async _init(): Promise<void> {
+        try {
+            const SQL = await initSqlJs();
+
+            // Try to load existing database
+            if (fs.existsSync(this.dbPath)) {
+                const buffer = fs.readFileSync(this.dbPath);
+                this.db = new SQL.Database(buffer);
+                logger.info(`[X402DB] Loaded existing database from: ${this.dbPath}`);
+            } else {
+                this.db = new SQL.Database();
+                logger.info(`[X402DB] Created new database`);
+            }
+
+            this.initSchema();
+            this.save();
+            this.initialized = true;
+            logger.info(`[X402DB] Database initialized at: ${this.dbPath}`);
+        } catch (error) {
+            logger.error(`[X402DB] Failed to initialize database:`, error);
+            throw error;
+        }
+    }
+
     private initSchema() {
-        this.db.exec(`
+        if (!this.db) return;
+
+        this.db.run(`
             CREATE TABLE IF NOT EXISTS users (
                 user_id TEXT PRIMARY KEY,
                 is_admin INTEGER DEFAULT 0,
@@ -69,8 +102,10 @@ class X402Database {
                 daily_reset_date TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
+            )
+        `);
 
+        this.db.run(`
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tx_hash TEXT UNIQUE,
@@ -78,27 +113,53 @@ class X402Database {
                 amount REAL,
                 payment_type TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
-            CREATE INDEX IF NOT EXISTS idx_payments_tx ON payments(tx_hash);
+            )
         `);
+
+        // Create indexes (ignore if exists)
+        try {
+            this.db.run(`CREATE INDEX idx_payments_user ON payments(user_id)`);
+        } catch (e) { /* Index might already exist */ }
+        try {
+            this.db.run(`CREATE INDEX idx_payments_tx ON payments(tx_hash)`);
+        } catch (e) { /* Index might already exist */ }
+    }
+
+    private save() {
+        if (!this.db) return;
+        try {
+            const data = this.db.export();
+            const buffer = Buffer.from(data);
+            fs.writeFileSync(this.dbPath, buffer);
+        } catch (error) {
+            logger.error(`[X402DB] Failed to save database:`, error);
+        }
     }
 
     // User Management
     getUser(userId: string): any {
+        if (!this.db) return null;
         const stmt = this.db.prepare('SELECT * FROM users WHERE user_id = ?');
-        return stmt.get(userId);
+        stmt.bind([userId]);
+        if (stmt.step()) {
+            const row = stmt.getAsObject();
+            stmt.free();
+            return row;
+        }
+        stmt.free();
+        return null;
     }
 
     ensureUser(userId: string): any {
         let user = this.getUser(userId);
         if (!user) {
-            const stmt = this.db.prepare(`
-                INSERT INTO users (user_id, daily_reset_date)
-                VALUES (?, date('now'))
-            `);
-            stmt.run(userId);
+            if (!this.db) return null;
+            const today = new Date().toISOString().split('T')[0];
+            this.db.run(
+                `INSERT INTO users (user_id, daily_reset_date) VALUES (?, ?)`,
+                [userId, today]
+            );
+            this.save();
             user = this.getUser(userId);
         }
         return user;
@@ -107,14 +168,15 @@ class X402Database {
     // Free Tier Management
     checkAndResetDailyFree(userId: string): void {
         const user = this.ensureUser(userId);
+        if (!user || !this.db) return;
         const today = new Date().toISOString().split('T')[0];
 
         if (user.daily_reset_date !== today) {
-            const stmt = this.db.prepare(`
-                UPDATE users SET daily_free_used = 0, daily_reset_date = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
-            `);
-            stmt.run(today, userId);
+            this.db.run(
+                `UPDATE users SET daily_free_used = 0, daily_reset_date = ?, updated_at = datetime('now') WHERE user_id = ?`,
+                [today, userId]
+            );
+            this.save();
         }
     }
 
@@ -127,12 +189,12 @@ class X402Database {
     consumeDailyFree(userId: string): boolean {
         this.checkAndResetDailyFree(userId);
         const remaining = this.getDailyFreeRemaining(userId);
-        if (remaining > 0) {
-            const stmt = this.db.prepare(`
-                UPDATE users SET daily_free_used = daily_free_used + 1, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
-            `);
-            stmt.run(userId);
+        if (remaining > 0 && this.db) {
+            this.db.run(
+                `UPDATE users SET daily_free_used = daily_free_used + 1, updated_at = datetime('now') WHERE user_id = ?`,
+                [userId]
+            );
+            this.save();
             return true;
         }
         return false;
@@ -141,16 +203,18 @@ class X402Database {
     // Pro Management
     isPro(userId: string): boolean {
         const user = this.ensureUser(userId);
-        if (!user.is_pro) return false;
+        if (!user?.is_pro) return false;
 
         const expiresAt = new Date(user.pro_expires_at);
         if (expiresAt < new Date()) {
             // Pro expired
-            const stmt = this.db.prepare(`
-                UPDATE users SET is_pro = 0, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
-            `);
-            stmt.run(userId);
+            if (this.db) {
+                this.db.run(
+                    `UPDATE users SET is_pro = 0, updated_at = datetime('now') WHERE user_id = ?`,
+                    [userId]
+                );
+                this.save();
+            }
             return false;
         }
         return true;
@@ -169,12 +233,14 @@ class X402Database {
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + durationDays);
 
-        const stmt = this.db.prepare(`
-            UPDATE users SET is_pro = 1, pro_expires_at = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ?
-        `);
-        stmt.run(expiresAt.toISOString(), userId);
-        logger.info(`[X402DB] Pro granted to ${userId} until ${expiresAt.toISOString()}`);
+        if (this.db) {
+            this.db.run(
+                `UPDATE users SET is_pro = 1, pro_expires_at = ?, updated_at = datetime('now') WHERE user_id = ?`,
+                [expiresAt.toISOString(), userId]
+            );
+            this.save();
+            logger.info(`[X402DB] Pro granted to ${userId} until ${expiresAt.toISOString()}`);
+        }
     }
 
     // Admin Management
@@ -185,12 +251,14 @@ class X402Database {
 
     setAdmin(userId: string, status: boolean): void {
         this.ensureUser(userId);
-        const stmt = this.db.prepare(`
-            UPDATE users SET is_admin = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ?
-        `);
-        stmt.run(status ? 1 : 0, userId);
-        logger.info(`[X402DB] Admin ${status ? 'granted' : 'revoked'} for ${userId}`);
+        if (this.db) {
+            this.db.run(
+                `UPDATE users SET is_admin = ?, updated_at = datetime('now') WHERE user_id = ?`,
+                [status ? 1 : 0, userId]
+            );
+            this.save();
+            logger.info(`[X402DB] Admin ${status ? 'granted' : 'revoked'} for ${userId}`);
+        }
     }
 
     // Credit Management
@@ -201,22 +269,24 @@ class X402Database {
 
     addCredits(userId: string, amount: number): void {
         this.ensureUser(userId);
-        const stmt = this.db.prepare(`
-            UPDATE users SET credits = credits + ?, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ?
-        `);
-        stmt.run(amount, userId);
-        logger.info(`[X402DB] Added ${amount} credits to ${userId}`);
+        if (this.db) {
+            this.db.run(
+                `UPDATE users SET credits = credits + ?, updated_at = datetime('now') WHERE user_id = ?`,
+                [amount, userId]
+            );
+            this.save();
+            logger.info(`[X402DB] Added ${amount} credits to ${userId}`);
+        }
     }
 
     consumeCredit(userId: string): boolean {
         const credits = this.getCredits(userId);
-        if (credits > 0) {
-            const stmt = this.db.prepare(`
-                UPDATE users SET credits = credits - 1, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
-            `);
-            stmt.run(userId);
+        if (credits > 0 && this.db) {
+            this.db.run(
+                `UPDATE users SET credits = credits - 1, updated_at = datetime('now') WHERE user_id = ?`,
+                [userId]
+            );
+            this.save();
             return true;
         }
         return false;
@@ -224,17 +294,23 @@ class X402Database {
 
     // Payment Tracking
     isPaymentUsed(txHash: string): boolean {
+        if (!this.db) return false;
         const stmt = this.db.prepare('SELECT 1 FROM payments WHERE tx_hash = ?');
-        return !!stmt.get(txHash);
+        stmt.bind([txHash]);
+        const exists = stmt.step();
+        stmt.free();
+        return exists;
     }
 
     recordPayment(txHash: string, userId: string, amount: number, paymentType: string): void {
-        const stmt = this.db.prepare(`
-            INSERT INTO payments (tx_hash, user_id, amount, payment_type)
-            VALUES (?, ?, ?, ?)
-        `);
-        stmt.run(txHash, userId, amount, paymentType);
-        logger.info(`[X402DB] Payment recorded: ${txHash} for ${userId} (${amount} USDC, ${paymentType})`);
+        if (this.db) {
+            this.db.run(
+                `INSERT INTO payments (tx_hash, user_id, amount, payment_type) VALUES (?, ?, ?, ?)`,
+                [txHash, userId, amount, paymentType]
+            );
+            this.save();
+            logger.info(`[X402DB] Payment recorded: ${txHash} for ${userId} (${amount} USDC, ${paymentType})`);
+        }
     }
 
     // Status
@@ -262,8 +338,8 @@ class X402Database {
 // Track processed messages to prevent multiple agents consuming access for same message
 const processedMessages = new Map<string, {
     userId: string;
-    hasAccess: boolean;  // Whether user has access
-    consumed: boolean;   // Whether access was consumed
+    hasAccess: boolean;
+    consumed: boolean;
     timestamp: number;
 }>();
 
@@ -278,7 +354,6 @@ setInterval(() => {
 }, 60 * 1000);
 
 function extractUserId(message: Memory): string {
-    // Try multiple sources for user ID
     const directUserId = (message as any).userId ||
         (message as any).authorId ||
         (message as any).author_id ||
@@ -291,13 +366,11 @@ function extractUserId(message: Memory): string {
         return directUserId;
     }
 
-    // Fallback to roomId
     logger.info(`[X402] extractUserId: Using roomId as fallback: ${message.roomId}`);
     return message.roomId;
 }
 
 function getMessageKey(message: Memory): string {
-    // Create a unique key for this message to prevent double-processing
     const msgId = message.id || (message as any).messageId || '';
     const text = (message.content?.text || '').substring(0, 50);
     const roomId = message.roomId || '';
@@ -331,8 +404,11 @@ export class X402Service extends Service {
     }
 
     static async start(runtime: IAgentRuntime) {
-        logger.info('*** Starting X402 service (SQLite persistent) ***');
-        return new X402Service(runtime);
+        logger.info('*** Starting X402 service (sql.js - pure JS, no native bindings) ***');
+        const service = new X402Service(runtime);
+        // Initialize database asynchronously
+        await service.db.init();
+        return service;
     }
 
     static async stop(_runtime: IAgentRuntime) {
@@ -347,7 +423,6 @@ export class X402Service extends Service {
         return this.db;
     }
 
-    // Check if user can access (Admin > Pro > Credits > Free)
     canAccess(userId: string): { allowed: boolean; reason: string; consumeType?: string } {
         if (this.db.isAdmin(userId)) {
             return { allowed: true, reason: 'admin' };
@@ -364,7 +439,6 @@ export class X402Service extends Service {
         return { allowed: false, reason: 'no_access' };
     }
 
-    // Consume access (call after response)
     consumeAccess(userId: string, consumeType: string): void {
         if (consumeType === 'credit') {
             this.db.consumeCredit(userId);
@@ -385,7 +459,6 @@ async function verifyPaymentOnChain(txHash: string): Promise<{
 }> {
     try {
         const provider = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
-
         logger.info(`[VERIFY_PAYMENT] Checking transaction: ${txHash}`);
         const tx = await provider.getTransaction(txHash);
 
@@ -416,7 +489,6 @@ async function verifyPaymentOnChain(txHash: string): Promise<{
                     if (to.toLowerCase() === CONFIG.RECEIVER_ADDRESS.toLowerCase()) {
                         const amount = parseFloat(ethers.formatUnits(value, 6));
                         logger.info(`[VERIFY_PAYMENT] Found transfer of ${amount} USDC`);
-
                         const isPro = amount >= CONFIG.PRO_PRICE_USDC;
                         return { verified: true, amount, isPro };
                     }
@@ -427,7 +499,7 @@ async function verifyPaymentOnChain(txHash: string): Promise<{
         }
 
         return { verified: false, error: '受取アドレスへの転送が見つかりません' };
-    } catch (error) {
+    } catch (error: any) {
         logger.error('[VERIFY_PAYMENT] Blockchain verification error:', error);
         return { verified: false, error: `検証エラー: ${error.message}` };
     }
@@ -495,7 +567,6 @@ const statusAction: Action = {
 // Check Payment Action - VERY AGGRESSIVE to intercept all messages when no access
 const checkPaymentAction: Action = {
     name: 'CHECK_PAYMENT',
-    // Match as many possible user intents as possible
     similes: [
         'RESPOND', 'ANSWER', 'HELP', 'ASSIST', 'EXPLAIN', 'TELL', 'SHOW',
         'CONSULT', 'ASK_QUESTION', 'REQUEST_ADVICE', 'GET_NEWS', 'SEARCH',
@@ -539,7 +610,7 @@ const checkPaymentAction: Action = {
             return false;
         }
 
-        // Check access (consumption happens in provider, not here)
+        // Check access
         const access = service.canAccess(userId);
         const db = service.getDatabase();
         const status = db.getUserStatus(userId);
@@ -548,11 +619,11 @@ const checkPaymentAction: Action = {
 
         if (access.allowed) {
             logger.info(`[CHECK_PAYMENT:${agentName}] User has access - NOT triggering payment gate`);
-            return false; // Has access, don't show payment prompt
+            return false;
         }
 
         logger.info(`[CHECK_PAYMENT:${agentName}] ⚠️ NO ACCESS - TRIGGERING PAYMENT GATE`);
-        return true; // No access - trigger payment prompt
+        return true;
     },
 
     handler: async (
@@ -633,7 +704,6 @@ const verifyPaymentAction: Action = {
 
         const txHash = txHashMatch[0];
 
-        // Check if already used
         if (db.isPaymentUsed(txHash)) {
             await callback({
                 text: '❌ このトランザクションは既に使用されています。',
@@ -642,7 +712,6 @@ const verifyPaymentAction: Action = {
             return { success: false };
         }
 
-        // Verify on blockchain
         const result = await verifyPaymentOnChain(txHash);
 
         if (result.verified && result.amount) {
@@ -786,7 +855,6 @@ const x402Provider: Provider = {
         const existingProcess = processedMessages.get(messageKey);
         if (existingProcess) {
             logger.info(`[X402Provider:${agentName}] Message already processed, hasAccess=${existingProcess.hasAccess}, consumed=${existingProcess.consumed}`);
-            // Use the same access decision as the first agent
             if (existingProcess.hasAccess) {
                 return {
                     text: `[X402_ACCESS_GRANTED] User has access (shared with other agent).`,
@@ -794,8 +862,6 @@ const x402Provider: Provider = {
                     data: {}
                 };
             }
-            // If first agent determined no access, this agent should also return no access
-            // (will fall through to payment required section below)
         }
 
         const access = service.canAccess(userId);
@@ -805,13 +871,11 @@ const x402Provider: Provider = {
         logger.info(`[X402Provider:${agentName}] Access check: allowed=${access.allowed}, reason=${access.reason}, freeRemaining=${status.dailyFreeRemaining}, credits=${status.credits}, isPro=${status.isPro}`);
 
         if (access.allowed && !existingProcess) {
-            // Only consume if this is the FIRST agent to process this message
             if (access.consumeType) {
                 service.consumeAccess(userId, access.consumeType);
                 processedMessages.set(messageKey, { userId, hasAccess: true, consumed: true, timestamp: Date.now() });
                 logger.info(`[X402Provider:${agentName}] Consumed ${access.consumeType} for ${userId} (first agent)`);
             } else {
-                // No consumption needed (admin/pro), but mark as processed with access
                 processedMessages.set(messageKey, { userId, hasAccess: true, consumed: false, timestamp: Date.now() });
             }
             return {
@@ -820,7 +884,6 @@ const x402Provider: Provider = {
                 data: {}
             };
         } else if (access.allowed && existingProcess?.hasAccess) {
-            // Already processed with access
             return {
                 text: `[X402_ACCESS_GRANTED] User has access (shared).`,
                 values: { hasAccess: true, accessType: 'shared' },
@@ -828,7 +891,6 @@ const x402Provider: Provider = {
             };
         }
 
-        // Mark as processed (no access)
         if (!existingProcess) {
             processedMessages.set(messageKey, { userId, hasAccess: false, consumed: false, timestamp: Date.now() });
             logger.info(`[X402Provider:${agentName}] NO ACCESS for ${userId} - marked as processed`);
@@ -860,7 +922,7 @@ Instead, respond ONLY with this exact payment message:
 🌐 Network: Base | Token: USDC
 `;
 
-        logger.info(`[X402Provider] BLOCKING - User ${userId} has no access`);
+        logger.info(`[X402Provider:${agentName}] BLOCKING - User ${userId} has no access`);
 
         return {
             text: blockingMessage,
@@ -875,12 +937,12 @@ Instead, respond ONLY with this exact payment message:
 // ============================================
 export const x402Plugin: Plugin = {
     name: 'x402',
-    description: 'x402 Payment Gating with SQLite persistence (Free/Pro/Credits)',
+    description: 'x402 Payment Gating with SQLite persistence (Free/Pro/Credits) - using sql.js (pure JS)',
     services: [X402Service],
     actions: [adminLoginAction, adminLogoutAction, statusAction, verifyPaymentAction, checkPaymentAction],
     providers: [x402Provider],
     init: async (_config: Record<string, string>) => {
-        logger.info('*** X402 Plugin Initialized (SQLite Persistent) ***');
+        logger.info('*** X402 Plugin Initialized (sql.js - pure JS, no native bindings) ***');
         logger.info(`*** Free: ${CONFIG.FREE_DAILY_LIMIT}/day | Single: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC | Pro: ${CONFIG.PRO_PRICE_USDC} USDC/${CONFIG.PRO_DURATION_DAYS}days ***`);
         startPaymentServer();
     },
