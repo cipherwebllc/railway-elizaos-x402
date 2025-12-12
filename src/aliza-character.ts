@@ -396,7 +396,7 @@ URLを記載する際は、リンクが正しく機能するよう以下を守�
             model: "ja_JP-female-f1" // 日本語音声設定があれば
         },
         avatar: 'https://dwebxr.xyz/images/aliza.jpg',
-        model: 'anthropic/claude-3-5-haiku',
+        model: 'qwen/qwen-2.5-7b-instruct:free',
         modelProvider: 'openrouter',
     },
     plugins: [
