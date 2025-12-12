@@ -22,14 +22,7 @@ export const character: Character = {
     // Ollama as fallback (only if no main LLM providers are configured)
     ...(process.env.OLLAMA_API_KEY?.trim() ? ['@elizaos/plugin-ollama'] : []),
 
-    // Platform plugins
-    ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
-    ...(process.env.TWITTER_API_KEY?.trim() &&
-      process.env.TWITTER_API_SECRET_KEY?.trim() &&
-      process.env.TWITTER_ACCESS_TOKEN?.trim() &&
-      process.env.TWITTER_ACCESS_TOKEN_SECRET?.trim()
-      ? ['@elizaos/plugin-twitter']
-      : []),
+    // Platform plugins (Discord/Twitter removed for Railway - run locally instead)
     ...(process.env.TELEGRAM_BOT_TOKEN?.trim() ? ['@elizaos/plugin-telegram'] : []),
 
     // Information and data plugins

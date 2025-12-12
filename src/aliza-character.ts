@@ -174,18 +174,12 @@ export const alizaCharacter: Character = {
         avatar: 'https://dwebxr.xyz/images/aliza.jpg',
         model: 'anthropic/claude-3-5-haiku',
         modelProvider: 'openrouter',
-        discord: {
-            shouldIgnoreBotMessages: true,
-            shouldIgnoreDirectMessages: false,
-            shouldRespondOnlyToMentions: false,
-        },
     },
     plugins: [
         // Core plugins
         '@elizaos/plugin-sql',
 
-        // Platform plugins
-        ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
+        // Platform plugins (Discord removed for Railway - run locally instead)
 
         // LLM plugins
         ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
