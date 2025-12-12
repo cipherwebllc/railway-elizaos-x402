@@ -1,4 +1,4 @@
-import type { Plugin } from '@elizaos/core';
+import type { Plugin, Evaluator } from '@elizaos/core';
 import {
     type Action,
     type ActionResult,
@@ -492,22 +492,36 @@ const statusAction: Action = {
     examples: []
 };
 
-// Check Payment Action
+// Check Payment Action - VERY AGGRESSIVE to intercept all messages when no access
 const checkPaymentAction: Action = {
     name: 'CHECK_PAYMENT',
-    similes: ['CONSULT', 'ASK_QUESTION', 'REQUEST_ADVICE', 'GET_NEWS', 'SEARCH'],
-    description: 'Payment gate - checks if user has access (Free/Credit/Pro/Admin)',
+    // Match as many possible user intents as possible
+    similes: [
+        'RESPOND', 'ANSWER', 'HELP', 'ASSIST', 'EXPLAIN', 'TELL', 'SHOW',
+        'CONSULT', 'ASK_QUESTION', 'REQUEST_ADVICE', 'GET_NEWS', 'SEARCH',
+        'QUERY', 'QUESTION', 'INFO', 'INFORMATION', 'CHAT', 'TALK', 'DISCUSS',
+        'ANALYZE', 'REVIEW', 'CHECK', 'FIND', 'LOOK', 'GET', 'GIVE', 'PROVIDE',
+        'CONTINUE', 'START', 'BEGIN', 'HELLO', 'HI', 'GREETING'
+    ],
+    description: 'Payment gate - MUST intercept ALL messages when user has no access',
 
     validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
         const service = runtime.getService<X402Service>('x402');
-        if (!service) return false;
+        if (!service) {
+            logger.warn('[CHECK_PAYMENT] No x402 service found');
+            return false;
+        }
 
         const userId = extractUserId(message);
         const text = (message.content.text || '').toLowerCase();
+        const agentName = runtime.character?.name || 'unknown';
+
+        logger.info(`[CHECK_PAYMENT:${agentName}] Validating for user: ${userId}`);
 
         // Allow verification/status messages through
         if (text.includes('支払いました') || text.includes('paid') || text.includes('0x') ||
             text.includes('ステータス') || text.includes('status')) {
+            logger.info(`[CHECK_PAYMENT:${agentName}] Skipping - payment/status message`);
             return false;
         }
 
@@ -515,20 +529,29 @@ const checkPaymentAction: Action = {
         const envKey = process.env.ADMIN_API_KEY;
         const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
         if ((envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret') {
+            logger.info(`[CHECK_PAYMENT:${agentName}] Skipping - admin key`);
             return false;
         }
 
         // Check room admin
         if (message.roomId && service.getDatabase().isAdmin(message.roomId)) {
+            logger.info(`[CHECK_PAYMENT:${agentName}] Skipping - room is admin`);
             return false;
         }
 
         // Check access (consumption happens in provider, not here)
         const access = service.canAccess(userId);
+        const db = service.getDatabase();
+        const status = db.getUserStatus(userId);
+
+        logger.info(`[CHECK_PAYMENT:${agentName}] User ${userId}: allowed=${access.allowed}, reason=${access.reason}, freeRemaining=${status.dailyFreeRemaining}`);
+
         if (access.allowed) {
+            logger.info(`[CHECK_PAYMENT:${agentName}] User has access - NOT triggering payment gate`);
             return false; // Has access, don't show payment prompt
         }
 
+        logger.info(`[CHECK_PAYMENT:${agentName}] ⚠️ NO ACCESS - TRIGGERING PAYMENT GATE`);
         return true; // No access - trigger payment prompt
     },
 
@@ -541,7 +564,10 @@ const checkPaymentAction: Action = {
         _responses: Memory[]
     ): Promise<ActionResult> => {
         const userId = extractUserId(message);
+        const agentName = runtime.character?.name || 'unknown';
         const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
+
+        logger.info(`[CHECK_PAYMENT:${agentName}] 🚫 HANDLER EXECUTING - Sending payment prompt to ${userId}`);
 
         const paymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
         const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
@@ -562,6 +588,7 @@ const checkPaymentAction: Action = {
 🌐 Network: Base | Token: USDC`;
 
         await callback({ text: responseText, source: message.content.source });
+        logger.info(`[CHECK_PAYMENT:${agentName}] ✅ Payment prompt sent`);
         return { success: true };
     },
     examples: []
