@@ -36,7 +36,7 @@ export const character: Character = {
   settings: {
     secrets: {},
     avatar: 'https://dwebxr.xyz/images/dliza.png',
-    model: 'gpt-oss:120b-cloud',
+    model: 'openai/gpt-5.1',
     modelProvider: 'ollama',
     mcp: {
       servers: {
