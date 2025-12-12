@@ -259,7 +259,26 @@ class X402Database {
 // ============================================
 // Helper Functions
 // ============================================
+// Track processed messages to prevent multiple agents consuming access for same message
+const processedMessages = new Map<string, {
+    userId: string;
+    hasAccess: boolean;  // Whether user has access
+    consumed: boolean;   // Whether access was consumed
+    timestamp: number;
+}>();
+
+// Clean up old entries every 5 minutes
+setInterval(() => {
+    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+    for (const [key, value] of processedMessages.entries()) {
+        if (value.timestamp < fiveMinutesAgo) {
+            processedMessages.delete(key);
+        }
+    }
+}, 60 * 1000);
+
 function extractUserId(message: Memory): string {
+    // Try multiple sources for user ID
     const directUserId = (message as any).userId ||
         (message as any).authorId ||
         (message as any).author_id ||
@@ -268,9 +287,21 @@ function extractUserId(message: Memory): string {
         (message.metadata as any)?.raw?.senderId;
 
     if (directUserId) {
+        logger.info(`[X402] extractUserId: Found direct userId: ${directUserId}`);
         return directUserId;
     }
+
+    // Fallback to roomId
+    logger.info(`[X402] extractUserId: Using roomId as fallback: ${message.roomId}`);
     return message.roomId;
+}
+
+function getMessageKey(message: Memory): string {
+    // Create a unique key for this message to prevent double-processing
+    const msgId = message.id || (message as any).messageId || '';
+    const text = (message.content?.text || '').substring(0, 50);
+    const roomId = message.roomId || '';
+    return `${roomId}:${msgId}:${text}`;
 }
 
 function getAllUserIds(message: Memory): string[] {
@@ -705,8 +736,10 @@ const x402Provider: Provider = {
 
         const userId = extractUserId(message);
         const text = (message.content.text || '').toLowerCase();
+        const messageKey = getMessageKey(message);
+        const agentName = runtime.character?.name || 'unknown';
 
-        logger.info(`[X402Provider] User: ${userId}, Message: ${text.substring(0, 50)}...`);
+        logger.info(`[X402Provider:${agentName}] User: ${userId}, MessageKey: ${messageKey.substring(0, 30)}...`);
 
         // Skip payment check for special messages
         if (text.includes('支払いました') || text.includes('paid') || text.includes('0x') ||
@@ -722,23 +755,56 @@ const x402Provider: Provider = {
             return { text: '', values: { hasAccess: true }, data: {} };
         }
 
+        // Check if this message was already processed by another agent
+        const existingProcess = processedMessages.get(messageKey);
+        if (existingProcess) {
+            logger.info(`[X402Provider:${agentName}] Message already processed, hasAccess=${existingProcess.hasAccess}, consumed=${existingProcess.consumed}`);
+            // Use the same access decision as the first agent
+            if (existingProcess.hasAccess) {
+                return {
+                    text: `[X402_ACCESS_GRANTED] User has access (shared with other agent).`,
+                    values: { hasAccess: true, accessType: 'shared' },
+                    data: {}
+                };
+            }
+            // If first agent determined no access, this agent should also return no access
+            // (will fall through to payment required section below)
+        }
+
         const access = service.canAccess(userId);
         const db = service.getDatabase();
         const status = db.getUserStatus(userId);
 
-        logger.info(`[X402Provider] Access check: allowed=${access.allowed}, reason=${access.reason}, freeRemaining=${status.dailyFreeRemaining}`);
+        logger.info(`[X402Provider:${agentName}] Access check: allowed=${access.allowed}, reason=${access.reason}, freeRemaining=${status.dailyFreeRemaining}, credits=${status.credits}, isPro=${status.isPro}`);
 
-        if (access.allowed) {
-            // Consume access HERE in provider
+        if (access.allowed && !existingProcess) {
+            // Only consume if this is the FIRST agent to process this message
             if (access.consumeType) {
                 service.consumeAccess(userId, access.consumeType);
-                logger.info(`[X402Provider] Consumed ${access.consumeType} for ${userId}`);
+                processedMessages.set(messageKey, { userId, hasAccess: true, consumed: true, timestamp: Date.now() });
+                logger.info(`[X402Provider:${agentName}] Consumed ${access.consumeType} for ${userId} (first agent)`);
+            } else {
+                // No consumption needed (admin/pro), but mark as processed with access
+                processedMessages.set(messageKey, { userId, hasAccess: true, consumed: false, timestamp: Date.now() });
             }
             return {
                 text: `[X402_ACCESS_GRANTED] User has access (${access.reason}).`,
                 values: { hasAccess: true, accessType: access.reason },
                 data: {}
             };
+        } else if (access.allowed && existingProcess?.hasAccess) {
+            // Already processed with access
+            return {
+                text: `[X402_ACCESS_GRANTED] User has access (shared).`,
+                values: { hasAccess: true, accessType: 'shared' },
+                data: {}
+            };
+        }
+
+        // Mark as processed (no access)
+        if (!existingProcess) {
+            processedMessages.set(messageKey, { userId, hasAccess: false, consumed: false, timestamp: Date.now() });
+            logger.info(`[X402Provider:${agentName}] NO ACCESS for ${userId} - marked as processed`);
         }
 
         // NO ACCESS - Return blocking instruction
