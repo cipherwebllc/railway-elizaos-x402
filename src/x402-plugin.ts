@@ -492,13 +492,10 @@ const checkPaymentAction: Action = {
             return false;
         }
 
-        // Check access
+        // Check access (consumption happens in provider, not here)
         const access = service.canAccess(userId);
         if (access.allowed) {
-            if (access.consumeType) {
-                service.consumeAccess(userId, access.consumeType);
-            }
-            return false;
+            return false; // Has access, don't show payment prompt
         }
 
         return true; // No access - trigger payment prompt
@@ -697,7 +694,7 @@ const adminLogoutAction: Action = {
 };
 
 // ============================================
-// Provider
+// Provider (Critical for payment gating)
 // ============================================
 const x402Provider: Provider = {
     // @ts-ignore
@@ -707,20 +704,75 @@ const x402Provider: Provider = {
         if (!service) return { text: '', values: {}, data: {} };
 
         const userId = extractUserId(message);
+        const text = (message.content.text || '').toLowerCase();
+
+        logger.info(`[X402Provider] User: ${userId}, Message: ${text.substring(0, 50)}...`);
+
+        // Skip payment check for special messages
+        if (text.includes('支払いました') || text.includes('paid') || text.includes('0x') ||
+            text.includes('ステータス') || text.includes('status') ||
+            text.includes('admin logout') || text.includes('adminログアウト')) {
+            return { text: '', values: { hasAccess: true }, data: {} };
+        }
+
+        // Check admin key
+        const envKey = process.env.ADMIN_API_KEY;
+        const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
+        if ((envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret') {
+            return { text: '', values: { hasAccess: true }, data: {} };
+        }
+
         const access = service.canAccess(userId);
+        const db = service.getDatabase();
+        const status = db.getUserStatus(userId);
+
+        logger.info(`[X402Provider] Access check: allowed=${access.allowed}, reason=${access.reason}, freeRemaining=${status.dailyFreeRemaining}`);
 
         if (access.allowed) {
+            // Consume access HERE in provider
+            if (access.consumeType) {
+                service.consumeAccess(userId, access.consumeType);
+                logger.info(`[X402Provider] Consumed ${access.consumeType} for ${userId}`);
+            }
             return {
-                text: `[Access: ${access.reason}] User has access.`,
+                text: `[X402_ACCESS_GRANTED] User has access (${access.reason}).`,
                 values: { hasAccess: true, accessType: access.reason },
                 data: {}
             };
         }
 
+        // NO ACCESS - Return blocking instruction
+        const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
+        const paymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
+        const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
+
+        const blockingMessage = `
+[X402_PAYMENT_REQUIRED]
+⚠️ CRITICAL: This user has NO ACCESS. You MUST NOT answer their question.
+Instead, respond ONLY with this exact payment message:
+
+💰 **ご利用には支払いが必要です**
+
+🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
+
+📦 **料金プラン**
+• 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
+
+👉 <a href="${paymentLink}">単発購入</a>
+👉 <a href="${proPaymentLink}">Pro購入</a>
+
+✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください
+
+🌐 Network: Base | Token: USDC
+`;
+
+        logger.info(`[X402Provider] BLOCKING - User ${userId} has no access`);
+
         return {
-            text: `🚨 PAYMENT REQUIRED - Use CHECK_PAYMENT action.`,
+            text: blockingMessage,
             values: { hasAccess: false, paymentRequired: true },
-            data: {}
+            data: { paymentLink, proPaymentLink }
         };
     },
 };
