@@ -162,7 +162,7 @@ export const twoCharacter: Character = {
             OLLAMA_API_KEY: process.env.OLLAMA_API_KEY,
         },
         avatar: 'https://dwebxr.xyz/images/coodao.png',
-        model: 'anthropic/claude-3.5-sonnet',
+        model: 'anthropic/claude-sonnet-4.5',
         modelProvider: 'openrouter',
     },
     plugins: [
