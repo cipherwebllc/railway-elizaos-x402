@@ -1106,7 +1106,7 @@ const x402Provider: Provider = {
             logger.info(`[X402Provider:${agentName}] Message already processed, hasAccess=${existingProcess.hasAccess}, consumed=${existingProcess.consumed}`);
             if (existingProcess.hasAccess) {
                 return {
-                    text: `[X402_ACCESS_GRANTED] User has access (shared with other agent).`,
+                    text: '',
                     values: { hasAccess: true, accessType: 'shared' },
                     data: {}
                 };
@@ -1128,13 +1128,13 @@ const x402Provider: Provider = {
                 processedMessages.set(messageKey, { userId, hasAccess: true, consumed: false, timestamp: Date.now() });
             }
             return {
-                text: `[X402_ACCESS_GRANTED] User has access (${access.reason}).`,
+                text: '',
                 values: { hasAccess: true, accessType: access.reason },
                 data: {}
             };
         } else if (access.allowed && existingProcess?.hasAccess) {
             return {
-                text: `[X402_ACCESS_GRANTED] User has access (shared).`,
+                text: '',
                 values: { hasAccess: true, accessType: 'shared' },
                 data: {}
             };
@@ -1145,32 +1145,13 @@ const x402Provider: Provider = {
             logger.info(`[X402Provider:${agentName}] NO ACCESS for ${userId} - marked as processed`);
         }
 
-        // NO ACCESS - Return blocking instruction
+        // NO ACCESS - Return empty text (CHECK_PAYMENT action will handle the response)
         const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
 
-        const blockingMessage = `
-[X402_PAYMENT_REQUIRED]
-⚠️ CRITICAL: This user has NO ACCESS. You MUST NOT answer their question.
-Instead, respond ONLY with this exact payment message:
-
-💰 **ご利用には支払いが必要です**
-
-🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
-
-📦 **料金プラン**
-
-**🔵 Base (USDC)**: 単発 ${CONFIG.SINGLE_PRICE_USDC} / Daily ${CONFIG.DAILY_PRICE_USDC}
-**🟣 Polygon (JPYC)**: 単発 ${CONFIG.SINGLE_PRICE_JPYC} / Daily ${CONFIG.DAILY_PRICE_JPYC}
-
-👉 ${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}
-
-✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください
-`;
-
-        logger.info(`[X402Provider:${agentName}] BLOCKING - User ${userId} has no access`);
+        logger.info(`[X402Provider:${agentName}] NO ACCESS - User ${userId} (CHECK_PAYMENT action will handle)`);
 
         return {
-            text: blockingMessage,
+            text: '',
             values: { hasAccess: false, paymentRequired: true },
             data: { paymentPageUrl: `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}` }
         };
