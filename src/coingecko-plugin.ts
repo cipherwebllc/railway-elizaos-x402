@@ -367,7 +367,7 @@ const cryptoPriceProvider: Provider = {
 
       if (!service) {
         return {
-          text: '',
+          text: 'CoinGecko service not available',
           values: {},
           data: {},
         };
@@ -388,16 +388,29 @@ const cryptoPriceProvider: Provider = {
         }
       }
 
-      // Return empty text but keep data in values for actions to use
+      // Only include coins with valid price data
+      const priceText = Object.entries(prices)
+        .filter(([_, data]) => data && data.usd)
+        .map(([coin, data]) => `${coin}: $${data.usd.toLocaleString()}`)
+        .join(', ');
+
+      if (!priceText) {
+        return {
+          text: 'Crypto price data temporarily unavailable',
+          values: {},
+          data: {},
+        };
+      }
+
       return {
-        text: '',
+        text: `Current crypto prices: ${priceText}`,
         values: prices,
         data: { lastUpdated: Date.now() },
       };
     } catch (error) {
       logger.error({ error }, 'Error in CRYPTO_PRICE_PROVIDER');
       return {
-        text: '',
+        text: 'Unable to fetch crypto prices',
         values: {},
         data: {},
       };
