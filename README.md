@@ -133,49 +133,89 @@ When deploying to Railway, set the following environment variables in your Railw
 
 ### X402 Payment System
 
-**🎉 自動設定で簡単！設定不要で動作します**
+**🎉 自動設定で簡単！Base USDC & Polygon JPYC 両対応**
+
+#### 料金プラン
+
+| プラン | Base (USDC) | Polygon (JPYC) | 内容 |
+|--------|-------------|----------------|------|
+| **単発** | 0.1 USDC | 15 JPYC | 1回分のクレジット |
+| **Daily** | 1 USDC | 150 JPYC | 30回/日（当日中有効） |
+| **Pro** | 9 USDC | 1500 JPYC | 30日間無制限 |
+
+無料枠: **3回/日**
 
 #### 仕組み
 
-支払いシステムはRailway環境を自動検出し、すぐに使えます：
-
-1. **自動URL検出**: Railwayの環境変数から自動的にURLを生成
-2. **支払いページ**: 別リポジトリでVercel/Netlifyにデプロイ
+1. **支払いページ**: 別リポジトリでVercel/Netlifyにデプロイ
    - 📁 **[x402payment-page](https://github.com/cipherwebllc/x402peyment-page)**
+2. **マルチチェーン対応**: Base (USDC) と Polygon (JPYC) に対応
 3. **MetaMask連携**: ワンクリックでウォレット接続・支払い
 4. **自動検証**: ブロックチェーン上でトランザクションを自動確認
 
 #### ユーザー体験の流れ
 
-1. **ユーザーが質問**
-2. **Botが支払いリンクを表示**:
+1. **ユーザーが質問** (無料枠: 3回/日)
+2. **無料枠を使い切ると、Botが支払いリンクを表示**:
    ```
-   💰 0.1 USDC の支払いが必要です
+   💰 ご利用には支払いが必要です
 
-   👉 <a href="https://x402payment.vercel.app/pay?user=123">支払いページへ</a>
+   📦 料金プラン
 
-   💡 対応ウォレット: MetaMask / Coinbase / Rabby など
+   🔵 Base (USDC)
+   • 単発: 0.1 USDC | Daily: 1 USDC | Pro: 9 USDC
+
+   🟣 Polygon (JPYC)
+   • 単発: 15 JPYC | Daily: 150 JPYC | Pro: 1500 JPYC
+
+   👉 支払いページへ
    ```
 3. **リンクをクリック** → 支払いページが開く
 4. **ウォレットを選択**:
    - 🦊 MetaMask
-   - 🔗 WalletConnect（開発中）
    - 💙 Coinbase Wallet
    - 🐰 Rabby Wallet
-5. **ウォレット接続** → 自動的に Base に切り替え
-6. **0.1 USDC 支払い** → トランザクション確認
-7. **「支払いました」** または txハッシュ送信
-8. **Bot が自動検証** → 質問に回答 ✨
+5. **ウォレット接続** → 自動的にネットワーク切り替え
+6. **支払い** → トランザクション確認
+7. **txハッシュ(0x...)を送信**
+8. **Bot が自動検証** → 質問に回答
 
 #### 技術仕様
 
+| 項目 | Base (USDC) | Polygon (JPYC) |
+|------|-------------|----------------|
+| **Network** | Base Mainnet | Polygon Mainnet |
+| **Token Contract** | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | `0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB` |
+| **Decimals** | 6 | 18 |
+| **RPC URL** | https://mainnet.base.org | https://polygon-rpc.com |
+
 | 項目 | 詳細 |
 |------|------|
-| **Network** | Base Mainnet |
-| **Token** | USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) |
-| **Amount** | 0.1 USDC = 1 クレジット |
 | **Payment Page** | [x402payment-page](https://github.com/cipherwebllc/x402peyment-page) (Vercel/Netlify) |
+| **Database** | sql.js (純粋JavaScript SQLite - ネイティブバインディング不要) |
 | **Verification** | Ethers.js v6 でブロックチェーン検証 |
+
+#### 環境変数
+
+```bash
+# 必須
+X402_RECEIVER_ADDRESS=0x...  # 支払い受取アドレス
+
+# オプション
+PAYMENT_PAGE_URL=https://x402payment.vercel.app  # 支払いページURL
+BASE_RPC_URL=https://mainnet.base.org  # Base RPC
+POLYGON_RPC_URL=https://polygon-rpc.com  # Polygon RPC
+X402_DB_DIR=./data  # データベース保存先
+```
+
+#### Railway Volume 設定 (データ永続化)
+
+1. Railway Dashboard → プロジェクト選択
+2. **Variables** タブで `X402_DB_DIR=/app/data` を追加
+3. **Settings** タブ → **Volume** セクション
+4. **Add Volume** をクリック
+5. **Mount Path**: `/app/data` を入力
+6. 再デプロイ → データが永続化されます
 
 #### 管理者機能
 
