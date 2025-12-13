@@ -869,11 +869,9 @@ const checkPaymentAction: Action = {
         // USDC links (Base)
         const usdcSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=single&amount=${CONFIG.SINGLE_PRICE_USDC}`;
         const usdcDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
-        const usdcProLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
         // JPYC links (Polygon)
         const jpycSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=single&amount=${CONFIG.SINGLE_PRICE_JPYC}`;
         const jpycDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=daily&amount=${CONFIG.DAILY_PRICE_JPYC}`;
-        const jpycProLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=pro&amount=${CONFIG.PRO_PRICE_JPYC}`;
 
         const responseText = `💰 **ご利用には支払いが必要です**
 
@@ -882,20 +880,18 @@ const checkPaymentAction: Action = {
 📦 **料金プラン**
 
 **🔵 Base (USDC)**
-• 🎫 単発: ${CONFIG.SINGLE_PRICE_USDC} USDC
-• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC (${CONFIG.DAILY_QUERY_LIMIT}回/日)
-• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC (${CONFIG.PRO_DURATION_DAYS}日間)
+• 🎫 単発: ${CONFIG.SINGLE_PRICE_USDC} USDC（1回分）
+• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC（${CONFIG.DAILY_QUERY_LIMIT}回/日）
 
 **🟣 Polygon (JPYC)**
-• 🎫 単発: ${CONFIG.SINGLE_PRICE_JPYC} JPYC
-• 📅 Daily: ${CONFIG.DAILY_PRICE_JPYC} JPYC (${CONFIG.DAILY_QUERY_LIMIT}回/日)
-• ⭐ Pro: ${CONFIG.PRO_PRICE_JPYC} JPYC (${CONFIG.PRO_DURATION_DAYS}日間)
+• 🎫 単発: ${CONFIG.SINGLE_PRICE_JPYC} JPYC（1回分）
+• 📅 Daily: ${CONFIG.DAILY_PRICE_JPYC} JPYC（${CONFIG.DAILY_QUERY_LIMIT}回/日）
 
 **USDC購入:**
-👉 <a href="${usdcSingleLink}">単発 ${CONFIG.SINGLE_PRICE_USDC} USDC</a> | <a href="${usdcDailyLink}">Daily ${CONFIG.DAILY_PRICE_USDC} USDC</a> | <a href="${usdcProLink}">Pro ${CONFIG.PRO_PRICE_USDC} USDC</a>
+👉 <a href="${usdcSingleLink}">単発 ${CONFIG.SINGLE_PRICE_USDC} USDC</a> | <a href="${usdcDailyLink}">Daily ${CONFIG.DAILY_PRICE_USDC} USDC</a>
 
 **JPYC購入:**
-👉 <a href="${jpycSingleLink}">単発 ${CONFIG.SINGLE_PRICE_JPYC} JPYC</a> | <a href="${jpycDailyLink}">Daily ${CONFIG.DAILY_PRICE_JPYC} JPYC</a> | <a href="${jpycProLink}">Pro ${CONFIG.PRO_PRICE_JPYC} JPYC</a>
+👉 <a href="${jpycSingleLink}">単発 ${CONFIG.SINGLE_PRICE_JPYC} JPYC</a> | <a href="${jpycDailyLink}">Daily ${CONFIG.DAILY_PRICE_JPYC} JPYC</a>
 
 ✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください`;
 
@@ -1163,8 +1159,8 @@ Instead, respond ONLY with this exact payment message:
 
 📦 **料金プラン**
 
-**🔵 Base (USDC)**: 単発 ${CONFIG.SINGLE_PRICE_USDC} / Daily ${CONFIG.DAILY_PRICE_USDC} / Pro ${CONFIG.PRO_PRICE_USDC}
-**🟣 Polygon (JPYC)**: 単発 ${CONFIG.SINGLE_PRICE_JPYC} / Daily ${CONFIG.DAILY_PRICE_JPYC} / Pro ${CONFIG.PRO_PRICE_JPYC}
+**🔵 Base (USDC)**: 単発 ${CONFIG.SINGLE_PRICE_USDC} / Daily ${CONFIG.DAILY_PRICE_USDC}
+**🟣 Polygon (JPYC)**: 単発 ${CONFIG.SINGLE_PRICE_JPYC} / Daily ${CONFIG.DAILY_PRICE_JPYC}
 
 👉 ${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}
 
@@ -1246,10 +1242,10 @@ const x402PaymentGateEvaluator: Evaluator = {
 📦 **料金プラン**
 
 **🔵 Base (USDC)**
-• 単発: ${CONFIG.SINGLE_PRICE_USDC} USDC | Daily: ${CONFIG.DAILY_PRICE_USDC} USDC | Pro: ${CONFIG.PRO_PRICE_USDC} USDC
+• 単発: ${CONFIG.SINGLE_PRICE_USDC} USDC | Daily: ${CONFIG.DAILY_PRICE_USDC} USDC
 
 **🟣 Polygon (JPYC)**
-• 単発: ${CONFIG.SINGLE_PRICE_JPYC} JPYC | Daily: ${CONFIG.DAILY_PRICE_JPYC} JPYC | Pro: ${CONFIG.PRO_PRICE_JPYC} JPYC
+• 単発: ${CONFIG.SINGLE_PRICE_JPYC} JPYC | Daily: ${CONFIG.DAILY_PRICE_JPYC} JPYC
 
 👉 <a href="${paymentLink}">支払いページへ</a>
 
