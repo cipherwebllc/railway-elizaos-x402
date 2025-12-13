@@ -37,6 +37,7 @@ export const character: Character = {
   settings: {
     secrets: {
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     },
     avatar: 'https://dwebxr.xyz/images/dliza.png',
     model: 'openai/gpt-5.1',
