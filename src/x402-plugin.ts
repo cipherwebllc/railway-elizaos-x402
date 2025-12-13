@@ -16,7 +16,6 @@ import { ethers } from 'ethers';
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import path from 'path';
 import fs from 'fs';
-import { startPaymentServer } from './pay-server.ts';
 
 // ============================================
 // Configuration
@@ -1179,8 +1178,7 @@ export const x402Plugin: Plugin = {
     evaluators: [x402PaymentGateEvaluator],
     init: async (_config: Record<string, string>) => {
         logger.info('*** X402 Plugin Initialized (sql.js - pure JS, no native bindings) ***');
-        logger.info(`*** Free: ${CONFIG.FREE_DAILY_LIMIT}/day | Single: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC | Pro: ${CONFIG.PRO_PRICE_USDC} USDC/${CONFIG.PRO_DURATION_DAYS}days ***`);
-        startPaymentServer();
+        logger.info(`*** Free: ${CONFIG.FREE_DAILY_LIMIT}/day | Single: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC | Daily: ${CONFIG.DAILY_PRICE_USDC} USDC | Pro: ${CONFIG.PRO_PRICE_USDC} USDC/${CONFIG.PRO_DURATION_DAYS}days ***`);
     },
 };
 
