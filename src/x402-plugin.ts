@@ -22,25 +22,17 @@ import fs from 'fs';
 // ============================================
 const CONFIG = {
     FREE_DAILY_LIMIT: 3,
-    DAILY_QUERY_LIMIT: 30,
-    PRO_DURATION_DAYS: 30,
-
-    // Base Mainnet USDC pricing
-    SINGLE_PRICE_USDC: 0.1,
+    // Daily Plan: 1 USDC for 30 queries/day (resets daily)
     DAILY_PRICE_USDC: 1,
+    DAILY_QUERY_LIMIT: 30,
+    // Pro Plan: 9 USDC for 30 days unlimited
     PRO_PRICE_USDC: 9,
-    USDC_ADDRESS: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // Base Mainnet USDC (6 decimals)
-    BASE_RPC_URL: process.env.BASE_RPC_URL || 'https://mainnet.base.org',
-
-    // Polygon JPYC pricing
-    SINGLE_PRICE_JPYC: 15,
-    DAILY_PRICE_JPYC: 150,
-    PRO_PRICE_JPYC: 1500,
-    JPYC_ADDRESS: '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB', // Polygon JPYC v2 (18 decimals)
-    POLYGON_RPC_URL: process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com',
-
-    // Common
+    PRO_DURATION_DAYS: 30,
+    // Single credit (legacy)
+    SINGLE_CREDIT_PRICE_USDC: 0.1,
     RECEIVER_ADDRESS: process.env.X402_RECEIVER_ADDRESS || '0x52d4901142e2b5680027da5eb47c86cb02a3ca81',
+    USDC_ADDRESS: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // Base Mainnet USDC
+    RPC_URL: process.env.BASE_RPC_URL || 'https://mainnet.base.org',
     DB_DIR: process.env.X402_DB_DIR || './data',
 };
 
@@ -587,26 +579,22 @@ export class X402Service extends Service {
 }
 
 // ============================================
-// Blockchain Verification (supports Base USDC and Polygon JPYC)
+// Blockchain Verification
 // ============================================
-type PaymentVerificationResult = {
+async function verifyPaymentOnChain(txHash: string): Promise<{
     verified: boolean;
     amount?: number;
-    currency?: 'USDC' | 'JPYC';
     error?: string;
     isPro?: boolean;
     isDaily?: boolean;
-};
-
-// Verify payment on Base (USDC)
-async function verifyUsdcPayment(txHash: string): Promise<PaymentVerificationResult> {
+}> {
     try {
-        const provider = new ethers.JsonRpcProvider(CONFIG.BASE_RPC_URL);
-        logger.info(`[VERIFY_USDC] Checking transaction on Base: ${txHash}`);
+        const provider = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
+        logger.info(`[VERIFY_PAYMENT] Checking transaction: ${txHash}`);
         const tx = await provider.getTransaction(txHash);
 
         if (!tx) {
-            return { verified: false, error: 'Base上でトランザクションが見つかりません' };
+            return { verified: false, error: 'トランザクションが見つかりません' };
         }
 
         const receipt = await provider.getTransactionReceipt(txHash);
@@ -618,23 +606,24 @@ async function verifyUsdcPayment(txHash: string): Promise<PaymentVerificationRes
             return { verified: false, error: 'USDC契約への転送ではありません' };
         }
 
-        const erc20Interface = new ethers.Interface([
+        const usdcInterface = new ethers.Interface([
             'event Transfer(address indexed from, address indexed to, uint256 value)'
         ]);
 
         for (const log of receipt.logs) {
             try {
-                const parsed = erc20Interface.parseLog({ topics: log.topics as string[], data: log.data });
+                const parsed = usdcInterface.parseLog({ topics: log.topics as string[], data: log.data });
                 if (parsed && parsed.name === 'Transfer') {
                     const to = parsed.args[1];
                     const value = parsed.args[2];
 
                     if (to.toLowerCase() === CONFIG.RECEIVER_ADDRESS.toLowerCase()) {
-                        const amount = parseFloat(ethers.formatUnits(value, 6)); // USDC has 6 decimals
-                        logger.info(`[VERIFY_USDC] Found transfer of ${amount} USDC`);
+                        const amount = parseFloat(ethers.formatUnits(value, 6));
+                        logger.info(`[VERIFY_PAYMENT] Found transfer of ${amount} USDC`);
+                        // Determine plan type based on amount
                         const isPro = amount >= CONFIG.PRO_PRICE_USDC;
                         const isDaily = !isPro && amount >= CONFIG.DAILY_PRICE_USDC;
-                        return { verified: true, amount, currency: 'USDC', isPro, isDaily };
+                        return { verified: true, amount, isPro, isDaily };
                     }
                 }
             } catch (e) {
@@ -642,85 +631,11 @@ async function verifyUsdcPayment(txHash: string): Promise<PaymentVerificationRes
             }
         }
 
-        return { verified: false, error: '受取アドレスへのUSDC転送が見つかりません' };
+        return { verified: false, error: '受取アドレスへの転送が見つかりません' };
     } catch (error: any) {
-        logger.error('[VERIFY_USDC] Error:', error);
-        return { verified: false, error: `Base検証エラー: ${error.message}` };
+        logger.error('[VERIFY_PAYMENT] Blockchain verification error:', error);
+        return { verified: false, error: `検証エラー: ${error.message}` };
     }
-}
-
-// Verify payment on Polygon (JPYC)
-async function verifyJpycPayment(txHash: string): Promise<PaymentVerificationResult> {
-    try {
-        const provider = new ethers.JsonRpcProvider(CONFIG.POLYGON_RPC_URL);
-        logger.info(`[VERIFY_JPYC] Checking transaction on Polygon: ${txHash}`);
-        const tx = await provider.getTransaction(txHash);
-
-        if (!tx) {
-            return { verified: false, error: 'Polygon上でトランザクションが見つかりません' };
-        }
-
-        const receipt = await provider.getTransactionReceipt(txHash);
-        if (!receipt || receipt.status !== 1) {
-            return { verified: false, error: 'トランザクションが失敗しています' };
-        }
-
-        if (tx.to?.toLowerCase() !== CONFIG.JPYC_ADDRESS.toLowerCase()) {
-            return { verified: false, error: 'JPYC契約への転送ではありません' };
-        }
-
-        const erc20Interface = new ethers.Interface([
-            'event Transfer(address indexed from, address indexed to, uint256 value)'
-        ]);
-
-        for (const log of receipt.logs) {
-            try {
-                const parsed = erc20Interface.parseLog({ topics: log.topics as string[], data: log.data });
-                if (parsed && parsed.name === 'Transfer') {
-                    const to = parsed.args[1];
-                    const value = parsed.args[2];
-
-                    if (to.toLowerCase() === CONFIG.RECEIVER_ADDRESS.toLowerCase()) {
-                        const amount = parseFloat(ethers.formatUnits(value, 18)); // JPYC has 18 decimals
-                        logger.info(`[VERIFY_JPYC] Found transfer of ${amount} JPYC`);
-                        const isPro = amount >= CONFIG.PRO_PRICE_JPYC;
-                        const isDaily = !isPro && amount >= CONFIG.DAILY_PRICE_JPYC;
-                        return { verified: true, amount, currency: 'JPYC', isPro, isDaily };
-                    }
-                }
-            } catch (e) {
-                continue;
-            }
-        }
-
-        return { verified: false, error: '受取アドレスへのJPYC転送が見つかりません' };
-    } catch (error: any) {
-        logger.error('[VERIFY_JPYC] Error:', error);
-        return { verified: false, error: `Polygon検証エラー: ${error.message}` };
-    }
-}
-
-// Main verification function - tries both networks
-async function verifyPaymentOnChain(txHash: string): Promise<PaymentVerificationResult> {
-    logger.info(`[VERIFY_PAYMENT] Checking transaction: ${txHash}`);
-
-    // Try Base (USDC) first
-    const usdcResult = await verifyUsdcPayment(txHash);
-    if (usdcResult.verified) {
-        return usdcResult;
-    }
-
-    // Try Polygon (JPYC)
-    const jpycResult = await verifyJpycPayment(txHash);
-    if (jpycResult.verified) {
-        return jpycResult;
-    }
-
-    // Neither worked - return combined error
-    return {
-        verified: false,
-        error: 'トランザクションが見つかりません。Base(USDC)またはPolygon(JPYC)で送金してください。'
-    };
 }
 
 // ============================================
@@ -769,15 +684,10 @@ const statusAction: Action = {
         }
 
         statusText += `\n---\n`;
-        statusText += `💰 **料金プラン**\n\n`;
-        statusText += `**Base (USDC)**\n`;
-        statusText += `• 🎫 単発: ${CONFIG.SINGLE_PRICE_USDC} USDC / 1回\n`;
+        statusText += `💰 **料金プラン**\n`;
+        statusText += `• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回\n`;
         statusText += `• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日\n`;
-        statusText += `• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n\n`;
-        statusText += `**Polygon (JPYC)**\n`;
-        statusText += `• 🎫 単発: ${CONFIG.SINGLE_PRICE_JPYC} JPYC / 1回\n`;
-        statusText += `• 📅 Daily: ${CONFIG.DAILY_PRICE_JPYC} JPYC / ${CONFIG.DAILY_QUERY_LIMIT}回/日\n`;
-        statusText += `• ⭐ Pro: ${CONFIG.PRO_PRICE_JPYC} JPYC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n`;
+        statusText += `• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n`;
 
         const responseContent: Content = {
             text: statusText,
@@ -866,38 +776,26 @@ const checkPaymentAction: Action = {
 
         logger.info(`[CHECK_PAYMENT:${agentName}] 🚫 HANDLER EXECUTING - Sending payment prompt to ${userId}`);
 
-        // USDC links (Base)
-        const usdcSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=single&amount=${CONFIG.SINGLE_PRICE_USDC}`;
-        const usdcDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
-        const usdcProLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
-        // JPYC links (Polygon)
-        const jpycSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=single&amount=${CONFIG.SINGLE_PRICE_JPYC}`;
-        const jpycDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=daily&amount=${CONFIG.DAILY_PRICE_JPYC}`;
-        const jpycProLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=pro&amount=${CONFIG.PRO_PRICE_JPYC}`;
+        const singlePaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_CREDIT_PRICE_USDC}`;
+        const dailyPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
+        const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
 
         const responseText = `💰 **ご利用には支払いが必要です**
 
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
 📦 **料金プラン**
+• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日
+• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
 
-**🔵 Base (USDC)**
-• 🎫 単発: ${CONFIG.SINGLE_PRICE_USDC} USDC
-• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC (${CONFIG.DAILY_QUERY_LIMIT}回/日)
-• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC (${CONFIG.PRO_DURATION_DAYS}日間)
+👉 <a href="${singlePaymentLink}">単発購入 (${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC)</a>
+👉 <a href="${dailyPaymentLink}">Daily購入 (${CONFIG.DAILY_PRICE_USDC} USDC)</a>
+👉 <a href="${proPaymentLink}">Pro購入 (${CONFIG.PRO_PRICE_USDC} USDC)</a>
 
-**🟣 Polygon (JPYC)**
-• 🎫 単発: ${CONFIG.SINGLE_PRICE_JPYC} JPYC
-• 📅 Daily: ${CONFIG.DAILY_PRICE_JPYC} JPYC (${CONFIG.DAILY_QUERY_LIMIT}回/日)
-• ⭐ Pro: ${CONFIG.PRO_PRICE_JPYC} JPYC (${CONFIG.PRO_DURATION_DAYS}日間)
+✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください
 
-**USDC購入:**
-👉 <a href="${usdcSingleLink}">単発 ${CONFIG.SINGLE_PRICE_USDC} USDC</a> | <a href="${usdcDailyLink}">Daily ${CONFIG.DAILY_PRICE_USDC} USDC</a> | <a href="${usdcProLink}">Pro ${CONFIG.PRO_PRICE_USDC} USDC</a>
-
-**JPYC購入:**
-👉 <a href="${jpycSingleLink}">単発 ${CONFIG.SINGLE_PRICE_JPYC} JPYC</a> | <a href="${jpycDailyLink}">Daily ${CONFIG.DAILY_PRICE_JPYC} JPYC</a> | <a href="${jpycProLink}">Pro ${CONFIG.PRO_PRICE_JPYC} JPYC</a>
-
-✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください`;
+🌐 Network: Base | Token: USDC`;
 
         await callback({ text: responseText, source: message.content.source });
         logger.info(`[CHECK_PAYMENT:${agentName}] ✅ Payment prompt sent`);
@@ -955,33 +853,28 @@ const verifyPaymentAction: Action = {
 
         const result = await verifyPaymentOnChain(txHash);
 
-        if (result.verified && result.amount && result.currency) {
+        if (result.verified && result.amount) {
             // Determine payment type: pro > daily > single
             const paymentType = result.isPro ? 'pro' : (result.isDaily ? 'daily' : 'single');
-            db.recordPayment(txHash, userId, result.amount, `${paymentType}_${result.currency}`);
-
-            const currencySymbol = result.currency;
-            const networkName = result.currency === 'USDC' ? 'Base' : 'Polygon';
+            db.recordPayment(txHash, userId, result.amount, paymentType);
 
             if (result.isPro) {
                 db.grantPro(userId);
                 await callback({
-                    text: `✅ **Pro会員になりました！**\n\n💰 受領額: ${result.amount} ${currencySymbol} (${networkName})\n⭐ ${CONFIG.PRO_DURATION_DAYS}日間無制限でご利用いただけます\n\nご質問をどうぞ！`,
+                    text: `✅ **Pro会員になりました！**\n\n💰 受領額: ${result.amount} USDC\n⭐ ${CONFIG.PRO_DURATION_DAYS}日間無制限でご利用いただけます\n\nご質問をどうぞ！`,
                     source: message.content.source,
                 });
             } else if (result.isDaily) {
                 db.grantDaily(userId);
                 await callback({
-                    text: `✅ **Dailyプランが有効になりました！**\n\n💰 受領額: ${result.amount} ${currencySymbol} (${networkName})\n📅 本日中 ${CONFIG.DAILY_QUERY_LIMIT}回までご利用いただけます\n\nご質問をどうぞ！`,
+                    text: `✅ **Dailyプランが有効になりました！**\n\n💰 受領額: ${result.amount} USDC\n📅 本日中 ${CONFIG.DAILY_QUERY_LIMIT}回までご利用いただけます\n\nご質問をどうぞ！`,
                     source: message.content.source,
                 });
             } else {
-                // Calculate credits based on currency
-                const singlePrice = result.currency === 'USDC' ? CONFIG.SINGLE_PRICE_USDC : CONFIG.SINGLE_PRICE_JPYC;
-                const creditsToAdd = Math.floor(result.amount / singlePrice);
+                const creditsToAdd = Math.floor(result.amount / CONFIG.SINGLE_CREDIT_PRICE_USDC);
                 db.addCredits(userId, creditsToAdd);
                 await callback({
-                    text: `✅ お支払いを確認しました！\n\n💰 受領額: ${result.amount} ${currencySymbol} (${networkName})\n🎫 クレジット: ${creditsToAdd}回分付与\n\nご質問をどうぞ！`,
+                    text: `✅ お支払いを確認しました！\n\n💰 受領額: ${result.amount} USDC\n🎫 クレジット: ${creditsToAdd}回分付与\n\nご質問をどうぞ！`,
                     source: message.content.source,
                 });
             }
@@ -1151,6 +1044,9 @@ const x402Provider: Provider = {
 
         // NO ACCESS - Return blocking instruction
         const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
+        const singlePaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_CREDIT_PRICE_USDC}`;
+        const dailyPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
+        const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
 
         const blockingMessage = `
 [X402_PAYMENT_REQUIRED]
@@ -1162,13 +1058,17 @@ Instead, respond ONLY with this exact payment message:
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
 📦 **料金プラン**
+• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日
+• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
 
-**🔵 Base (USDC)**: 単発 ${CONFIG.SINGLE_PRICE_USDC} / Daily ${CONFIG.DAILY_PRICE_USDC} / Pro ${CONFIG.PRO_PRICE_USDC}
-**🟣 Polygon (JPYC)**: 単発 ${CONFIG.SINGLE_PRICE_JPYC} / Daily ${CONFIG.DAILY_PRICE_JPYC} / Pro ${CONFIG.PRO_PRICE_JPYC}
-
-👉 ${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}
+👉 <a href="${singlePaymentLink}">単発購入</a>
+👉 <a href="${dailyPaymentLink}">Daily購入</a>
+👉 <a href="${proPaymentLink}">Pro購入</a>
 
 ✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください
+
+🌐 Network: Base | Token: USDC
 `;
 
         logger.info(`[X402Provider:${agentName}] BLOCKING - User ${userId} has no access`);
@@ -1176,7 +1076,7 @@ Instead, respond ONLY with this exact payment message:
         return {
             text: blockingMessage,
             values: { hasAccess: false, paymentRequired: true },
-            data: { paymentPageUrl: `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}` }
+            data: { singlePaymentLink, dailyPaymentLink, proPaymentLink }
         };
     },
 };
@@ -1235,7 +1135,9 @@ const x402PaymentGateEvaluator: Evaluator = {
 
         logger.info(`[X402_EVALUATOR:${agentName}] 🚫 BLOCKING RESPONSE - User ${userId} has no access`);
 
-        const paymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
+        const singlePaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_CREDIT_PRICE_USDC}`;
+        const dailyPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
+        const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
 
         // Return the payment required message - this should replace the agent's response
         return {
@@ -1244,16 +1146,17 @@ const x402PaymentGateEvaluator: Evaluator = {
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
 📦 **料金プラン**
+• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日
+• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
 
-**🔵 Base (USDC)**
-• 単発: ${CONFIG.SINGLE_PRICE_USDC} USDC | Daily: ${CONFIG.DAILY_PRICE_USDC} USDC | Pro: ${CONFIG.PRO_PRICE_USDC} USDC
+👉 <a href="${singlePaymentLink}">単発購入 (${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC)</a>
+👉 <a href="${dailyPaymentLink}">Daily購入 (${CONFIG.DAILY_PRICE_USDC} USDC)</a>
+👉 <a href="${proPaymentLink}">Pro購入 (${CONFIG.PRO_PRICE_USDC} USDC)</a>
 
-**🟣 Polygon (JPYC)**
-• 単発: ${CONFIG.SINGLE_PRICE_JPYC} JPYC | Daily: ${CONFIG.DAILY_PRICE_JPYC} JPYC | Pro: ${CONFIG.PRO_PRICE_JPYC} JPYC
+✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください
 
-👉 <a href="${paymentLink}">支払いページへ</a>
-
-✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください`,
+🌐 Network: Base | Token: USDC`,
             shouldBlock: true,
             action: 'BLOCK_RESPONSE'
         };
@@ -1274,10 +1177,8 @@ export const x402Plugin: Plugin = {
     providers: [x402Provider],
     evaluators: [x402PaymentGateEvaluator],
     init: async (_config: Record<string, string>) => {
-        logger.info('*** X402 Plugin Initialized (sql.js - supports Base USDC & Polygon JPYC) ***');
-        logger.info(`*** Free: ${CONFIG.FREE_DAILY_LIMIT}/day ***`);
-        logger.info(`*** USDC (Base): Single ${CONFIG.SINGLE_PRICE_USDC} | Daily ${CONFIG.DAILY_PRICE_USDC} | Pro ${CONFIG.PRO_PRICE_USDC}/${CONFIG.PRO_DURATION_DAYS}days ***`);
-        logger.info(`*** JPYC (Polygon): Single ${CONFIG.SINGLE_PRICE_JPYC} | Daily ${CONFIG.DAILY_PRICE_JPYC} | Pro ${CONFIG.PRO_PRICE_JPYC}/${CONFIG.PRO_DURATION_DAYS}days ***`);
+        logger.info('*** X402 Plugin Initialized (sql.js - pure JS, no native bindings) ***');
+        logger.info(`*** Free: ${CONFIG.FREE_DAILY_LIMIT}/day | Single: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC | Daily: ${CONFIG.DAILY_PRICE_USDC} USDC | Pro: ${CONFIG.PRO_PRICE_USDC} USDC/${CONFIG.PRO_DURATION_DAYS}days ***`);
     },
 };
 
