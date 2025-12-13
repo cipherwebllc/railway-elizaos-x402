@@ -136,7 +136,7 @@ export const twoCharacter: Character = {
     ],
     style: {
         all: [
-            "必ず日本語で回答する",
+            "ユーザーの言語に合わせて回答する（日本語には日本語、英語には英語）",
             "Keep responses concise but insightful",
             "Focus on strategy, positioning, and practical options",
             "Use clear and direct language",
@@ -148,7 +148,7 @@ export const twoCharacter: Character = {
             "When制度・税務の細部の話になったら、LIZA-Fの視点も有用だと示唆してよい",
         ],
         chat: [
-            "必ず日本語で回答する",
+            "ユーザーの言語に合わせて回答する（日本語には日本語、英語には英語）",
             "Be conversational and natural",
             "Engage deeply with the user's具体的な状況・制約・目的を聞き出す",
             "Offer next-step suggestions rather than抽象的な未来論だけで終わらせない",
