@@ -1106,7 +1106,7 @@ const x402Provider: Provider = {
             logger.info(`[X402Provider:${agentName}] Message already processed, hasAccess=${existingProcess.hasAccess}, consumed=${existingProcess.consumed}`);
             if (existingProcess.hasAccess) {
                 return {
-                    text: `[X402_ACCESS_GRANTED] User has access (shared with other agent).`,
+                    text: '',
                     values: { hasAccess: true, accessType: 'shared' },
                     data: {}
                 };
@@ -1128,13 +1128,13 @@ const x402Provider: Provider = {
                 processedMessages.set(messageKey, { userId, hasAccess: true, consumed: false, timestamp: Date.now() });
             }
             return {
-                text: `[X402_ACCESS_GRANTED] User has access (${access.reason}).`,
+                text: '',
                 values: { hasAccess: true, accessType: access.reason },
                 data: {}
             };
         } else if (access.allowed && existingProcess?.hasAccess) {
             return {
-                text: `[X402_ACCESS_GRANTED] User has access (shared).`,
+                text: '',
                 values: { hasAccess: true, accessType: 'shared' },
                 data: {}
             };
