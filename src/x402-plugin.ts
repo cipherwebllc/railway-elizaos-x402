@@ -686,6 +686,7 @@ const statusAction: Action = {
 
         statusText += `\n---\n`;
         statusText += `💰 **料金プラン**\n`;
+        statusText += `• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回\n`;
         statusText += `• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日\n`;
         statusText += `• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n`;
 
@@ -776,6 +777,7 @@ const checkPaymentAction: Action = {
 
         logger.info(`[CHECK_PAYMENT:${agentName}] 🚫 HANDLER EXECUTING - Sending payment prompt to ${userId}`);
 
+        const singlePaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_CREDIT_PRICE_USDC}`;
         const dailyPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
         const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
 
@@ -784,9 +786,11 @@ const checkPaymentAction: Action = {
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
 📦 **料金プラン**
+• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
 • 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日
 • ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
 
+👉 <a href="${singlePaymentLink}">単発購入 (${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC)</a>
 👉 <a href="${dailyPaymentLink}">Daily購入 (${CONFIG.DAILY_PRICE_USDC} USDC)</a>
 👉 <a href="${proPaymentLink}">Pro購入 (${CONFIG.PRO_PRICE_USDC} USDC)</a>
 
@@ -1041,6 +1045,7 @@ const x402Provider: Provider = {
 
         // NO ACCESS - Return blocking instruction
         const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
+        const singlePaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_CREDIT_PRICE_USDC}`;
         const dailyPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
         const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
 
@@ -1054,9 +1059,11 @@ Instead, respond ONLY with this exact payment message:
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
 📦 **料金プラン**
+• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
 • 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日
 • ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
 
+👉 <a href="${singlePaymentLink}">単発購入</a>
 👉 <a href="${dailyPaymentLink}">Daily購入</a>
 👉 <a href="${proPaymentLink}">Pro購入</a>
 
@@ -1070,7 +1077,7 @@ Instead, respond ONLY with this exact payment message:
         return {
             text: blockingMessage,
             values: { hasAccess: false, paymentRequired: true },
-            data: { dailyPaymentLink, proPaymentLink }
+            data: { singlePaymentLink, dailyPaymentLink, proPaymentLink }
         };
     },
 };
@@ -1129,6 +1136,7 @@ const x402PaymentGateEvaluator: Evaluator = {
 
         logger.info(`[X402_EVALUATOR:${agentName}] 🚫 BLOCKING RESPONSE - User ${userId} has no access`);
 
+        const singlePaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_CREDIT_PRICE_USDC}`;
         const dailyPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
         const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
 
@@ -1139,9 +1147,11 @@ const x402PaymentGateEvaluator: Evaluator = {
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
 📦 **料金プラン**
+• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
 • 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日
 • ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
 
+👉 <a href="${singlePaymentLink}">単発購入 (${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC)</a>
 👉 <a href="${dailyPaymentLink}">Daily購入 (${CONFIG.DAILY_PRICE_USDC} USDC)</a>
 👉 <a href="${proPaymentLink}">Pro購入 (${CONFIG.PRO_PRICE_USDC} USDC)</a>
 
