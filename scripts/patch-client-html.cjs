@@ -43,14 +43,41 @@ function patchHtml(htmlPath, iconPath = '/apple-touch-icon.png') {
     const coodaoIconUrl = 'https://dwebxr.xyz/images/coodao.png';
 
     // iOS PWA meta tags for better home screen experience
+    // Also includes CSS fix for sidebar list styling (removes bullet points)
     const pwaTags = `
     <link rel="apple-touch-icon" sizes="180x180" href="${coodaoIconUrl}">
     <link rel="apple-touch-icon-precomposed" sizes="180x180" href="${coodaoIconUrl}">
     <link rel="icon" type="image/png" href="${coodaoIconUrl}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Coo">`;
+    <meta name="apple-mobile-web-app-title" content="Coo">
+    <style>
+      /* Fix sidebar list styling - remove bullet points */
+      nav ul, nav ol, aside ul, aside ol,
+      [class*="sidebar"] ul, [class*="sidebar"] ol,
+      [class*="menu"] ul, [class*="menu"] ol,
+      [class*="nav"] ul, [class*="nav"] ol {
+        list-style: none !important;
+        padding-left: 0 !important;
+        margin-left: 0 !important;
+      }
+      nav li, aside li,
+      [class*="sidebar"] li, [class*="menu"] li, [class*="nav"] li {
+        list-style: none !important;
+      }
+      nav li::before, aside li::before,
+      [class*="sidebar"] li::before, [class*="menu"] li::before, [class*="nav"] li::before {
+        content: none !important;
+      }
+      /* Also target common sidebar class patterns */
+      .sidebar ul, .sidebar ol, .side-nav ul, .side-nav ol {
+        list-style: none !important;
+      }
+    </style>`;
 
+    let modified = false;
+
+    // Check if apple-touch-icon needs to be added
     if (!content.includes('apple-touch-icon')) {
         // Try different injection points
         if (content.includes('<meta charset="UTF-8" />')) {
@@ -63,12 +90,48 @@ function patchHtml(htmlPath, iconPath = '/apple-touch-icon.png') {
             console.warn('⚠️ Could not find injection point in HTML');
             return false;
         }
-
-        fs.writeFileSync(htmlPath, content);
+        modified = true;
         console.log(`✅ Injected apple-touch-icon into: ${htmlPath}`);
+    }
+
+    // Check if CSS fix needs to be added (even if apple-touch-icon exists)
+    if (!content.includes('Fix sidebar list styling')) {
+        const cssStyles = `
+    <style>
+      /* Fix sidebar list styling - remove bullet points */
+      nav ul, nav ol, aside ul, aside ol,
+      [class*="sidebar"] ul, [class*="sidebar"] ol,
+      [class*="menu"] ul, [class*="menu"] ol,
+      [class*="nav"] ul, [class*="nav"] ol {
+        list-style: none !important;
+        padding-left: 0 !important;
+        margin-left: 0 !important;
+      }
+      nav li, aside li,
+      [class*="sidebar"] li, [class*="menu"] li, [class*="nav"] li {
+        list-style: none !important;
+      }
+      nav li::before, aside li::before,
+      [class*="sidebar"] li::before, [class*="menu"] li::before, [class*="nav"] li::before {
+        content: none !important;
+      }
+    </style>`;
+
+        // Find a good place to insert CSS
+        if (content.includes('<meta name="viewport"')) {
+            content = content.replace('<meta name="viewport"', `${cssStyles}\n    <meta name="viewport"`);
+        } else if (content.includes('</head>')) {
+            content = content.replace('</head>', `${cssStyles}\n</head>`);
+        }
+        modified = true;
+        console.log(`✅ Injected CSS fixes into: ${htmlPath}`);
+    }
+
+    if (modified) {
+        fs.writeFileSync(htmlPath, content);
         return true;
     } else {
-        console.log(`ℹ️ apple-touch-icon already present in: ${htmlPath}`);
+        console.log(`ℹ️ All patches already present in: ${htmlPath}`);
         return true;
     }
 }

@@ -42,7 +42,10 @@ export const character: Character = {
     ...(!process.env.IGNORE_BOOTSTRAP ? ['@elizaos/plugin-bootstrap'] : []),
   ],
   settings: {
-    secrets: {},
+    secrets: {
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    },
     avatar: 'https://dwebxr.xyz/images/dliza.png',
     model: 'openai/gpt-4.1',
     modelProvider: 'openrouter',
