@@ -23,8 +23,13 @@ import { startPaymentServer } from './pay-server.ts';
 // ============================================
 const CONFIG = {
     FREE_DAILY_LIMIT: 3,
-    PRO_PRICE_USDC: 5,
+    // Daily Plan: 1 USDC for 30 queries/day (resets daily)
+    DAILY_PRICE_USDC: 1,
+    DAILY_QUERY_LIMIT: 30,
+    // Pro Plan: 9 USDC for 30 days unlimited
+    PRO_PRICE_USDC: 9,
     PRO_DURATION_DAYS: 30,
+    // Single credit (legacy)
     SINGLE_CREDIT_PRICE_USDC: 0.1,
     RECEIVER_ADDRESS: process.env.X402_RECEIVER_ADDRESS || '0x52d4901142e2b5680027da5eb47c86cb02a3ca81',
     USDC_ADDRESS: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // Base Mainnet USDC
@@ -98,6 +103,9 @@ class X402Database {
                 is_admin INTEGER DEFAULT 0,
                 is_pro INTEGER DEFAULT 0,
                 pro_expires_at TEXT,
+                is_daily INTEGER DEFAULT 0,
+                daily_plan_expires_at TEXT,
+                daily_plan_used INTEGER DEFAULT 0,
                 credits INTEGER DEFAULT 0,
                 daily_free_used INTEGER DEFAULT 0,
                 daily_reset_date TEXT,
@@ -105,6 +113,17 @@ class X402Database {
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         `);
+
+        // Add new columns if they don't exist (for migration)
+        try {
+            this.db.run(`ALTER TABLE users ADD COLUMN is_daily INTEGER DEFAULT 0`);
+        } catch (e) { /* Column might already exist */ }
+        try {
+            this.db.run(`ALTER TABLE users ADD COLUMN daily_plan_expires_at TEXT`);
+        } catch (e) { /* Column might already exist */ }
+        try {
+            this.db.run(`ALTER TABLE users ADD COLUMN daily_plan_used INTEGER DEFAULT 0`);
+        } catch (e) { /* Column might already exist */ }
 
         this.db.run(`
             CREATE TABLE IF NOT EXISTS payments (
@@ -244,6 +263,70 @@ class X402Database {
         }
     }
 
+    // Daily Plan Management (1 USDC / 30 queries per day)
+    isDaily(userId: string): boolean {
+        const user = this.ensureUser(userId);
+        if (!user?.is_daily) return false;
+
+        const expiresAt = new Date(user.daily_plan_expires_at);
+        if (expiresAt < new Date()) {
+            // Daily plan expired
+            if (this.db) {
+                this.db.run(
+                    `UPDATE users SET is_daily = 0, daily_plan_used = 0, updated_at = datetime('now') WHERE user_id = ?`,
+                    [userId]
+                );
+                this.save();
+            }
+            return false;
+        }
+        return true;
+    }
+
+    getDailyPlanRemaining(userId: string): number {
+        if (!this.isDaily(userId)) return 0;
+        const user = this.getUser(userId);
+        return Math.max(0, CONFIG.DAILY_QUERY_LIMIT - (user?.daily_plan_used || 0));
+    }
+
+    getDailyPlanExpiresAt(userId: string): Date | null {
+        const user = this.getUser(userId);
+        if (user?.daily_plan_expires_at) {
+            return new Date(user.daily_plan_expires_at);
+        }
+        return null;
+    }
+
+    grantDaily(userId: string): void {
+        this.ensureUser(userId);
+        // Daily plan expires at end of today (23:59:59)
+        const expiresAt = new Date();
+        expiresAt.setHours(23, 59, 59, 999);
+
+        if (this.db) {
+            this.db.run(
+                `UPDATE users SET is_daily = 1, daily_plan_expires_at = ?, daily_plan_used = 0, updated_at = datetime('now') WHERE user_id = ?`,
+                [expiresAt.toISOString(), userId]
+            );
+            this.save();
+            logger.info(`[X402DB] Daily plan granted to ${userId} until ${expiresAt.toISOString()}`);
+        }
+    }
+
+    consumeDaily(userId: string): boolean {
+        if (!this.isDaily(userId)) return false;
+        const remaining = this.getDailyPlanRemaining(userId);
+        if (remaining > 0 && this.db) {
+            this.db.run(
+                `UPDATE users SET daily_plan_used = daily_plan_used + 1, updated_at = datetime('now') WHERE user_id = ?`,
+                [userId]
+            );
+            this.save();
+            return true;
+        }
+        return false;
+    }
+
     // Admin Management
     isAdmin(userId: string): boolean {
         const user = this.getUser(userId);
@@ -318,6 +401,9 @@ class X402Database {
     getUserStatus(userId: string): {
         isPro: boolean;
         proExpiresAt: Date | null;
+        isDaily: boolean;
+        dailyPlanRemaining: number;
+        dailyPlanExpiresAt: Date | null;
         credits: number;
         dailyFreeRemaining: number;
         isAdmin: boolean;
@@ -326,6 +412,9 @@ class X402Database {
         return {
             isPro: this.isPro(userId),
             proExpiresAt: this.getProExpiresAt(userId),
+            isDaily: this.isDaily(userId),
+            dailyPlanRemaining: this.getDailyPlanRemaining(userId),
+            dailyPlanExpiresAt: this.getDailyPlanExpiresAt(userId),
             credits: this.getCredits(userId),
             dailyFreeRemaining: this.getDailyFreeRemaining(userId),
             isAdmin: this.isAdmin(userId),
@@ -466,6 +555,10 @@ export class X402Service extends Service {
         if (this.db.isPro(userId)) {
             return { allowed: true, reason: 'pro' };
         }
+        // Daily plan: 1 USDC / 30 queries per day
+        if (this.db.getDailyPlanRemaining(userId) > 0) {
+            return { allowed: true, reason: 'daily', consumeType: 'daily' };
+        }
         if (this.db.getCredits(userId) > 0) {
             return { allowed: true, reason: 'credit', consumeType: 'credit' };
         }
@@ -476,7 +569,9 @@ export class X402Service extends Service {
     }
 
     consumeAccess(userId: string, consumeType: string): void {
-        if (consumeType === 'credit') {
+        if (consumeType === 'daily') {
+            this.db.consumeDaily(userId);
+        } else if (consumeType === 'credit') {
             this.db.consumeCredit(userId);
         } else if (consumeType === 'free') {
             this.db.consumeDailyFree(userId);
@@ -492,6 +587,7 @@ async function verifyPaymentOnChain(txHash: string): Promise<{
     amount?: number;
     error?: string;
     isPro?: boolean;
+    isDaily?: boolean;
 }> {
     try {
         const provider = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
@@ -525,8 +621,10 @@ async function verifyPaymentOnChain(txHash: string): Promise<{
                     if (to.toLowerCase() === CONFIG.RECEIVER_ADDRESS.toLowerCase()) {
                         const amount = parseFloat(ethers.formatUnits(value, 6));
                         logger.info(`[VERIFY_PAYMENT] Found transfer of ${amount} USDC`);
+                        // Determine plan type based on amount
                         const isPro = amount >= CONFIG.PRO_PRICE_USDC;
-                        return { verified: true, amount, isPro };
+                        const isDaily = !isPro && amount >= CONFIG.DAILY_PRICE_USDC;
+                        return { verified: true, amount, isPro, isDaily };
                     }
                 }
             } catch (e) {
@@ -579,6 +677,8 @@ const statusAction: Action = {
         } else if (status.isPro) {
             const expiresStr = status.proExpiresAt ? status.proExpiresAt.toLocaleDateString('ja-JP') : '';
             statusText += `⭐ **Pro会員** - 無制限（${expiresStr}まで）\n`;
+        } else if (status.isDaily) {
+            statusText += `📅 **Dailyプラン** - 残り ${status.dailyPlanRemaining}/${CONFIG.DAILY_QUERY_LIMIT}回（本日中有効）\n`;
         } else {
             statusText += `🎫 購入クレジット: ${status.credits}回\n`;
             statusText += `🆓 本日の無料枠: ${status.dailyFreeRemaining}/${CONFIG.FREE_DAILY_LIMIT}回\n`;
@@ -586,8 +686,9 @@ const statusAction: Action = {
 
         statusText += `\n---\n`;
         statusText += `💰 **料金プラン**\n`;
-        statusText += `• 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回\n`;
-        statusText += `• Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n`;
+        statusText += `• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回\n`;
+        statusText += `• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日\n`;
+        statusText += `• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n`;
 
         const responseContent: Content = {
             text: statusText,
@@ -676,7 +777,8 @@ const checkPaymentAction: Action = {
 
         logger.info(`[CHECK_PAYMENT:${agentName}] 🚫 HANDLER EXECUTING - Sending payment prompt to ${userId}`);
 
-        const paymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
+        const singlePaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_CREDIT_PRICE_USDC}`;
+        const dailyPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
         const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
 
         const responseText = `💰 **ご利用には支払いが必要です**
@@ -684,10 +786,12 @@ const checkPaymentAction: Action = {
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
 📦 **料金プラン**
-• 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日
 • ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
 
-👉 <a href="${paymentLink}">単発購入 (${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC)</a>
+👉 <a href="${singlePaymentLink}">単発購入 (${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC)</a>
+👉 <a href="${dailyPaymentLink}">Daily購入 (${CONFIG.DAILY_PRICE_USDC} USDC)</a>
 👉 <a href="${proPaymentLink}">Pro購入 (${CONFIG.PRO_PRICE_USDC} USDC)</a>
 
 ✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください
@@ -751,13 +855,20 @@ const verifyPaymentAction: Action = {
         const result = await verifyPaymentOnChain(txHash);
 
         if (result.verified && result.amount) {
-            const paymentType = result.isPro ? 'pro' : 'single';
+            // Determine payment type: pro > daily > single
+            const paymentType = result.isPro ? 'pro' : (result.isDaily ? 'daily' : 'single');
             db.recordPayment(txHash, userId, result.amount, paymentType);
 
             if (result.isPro) {
                 db.grantPro(userId);
                 await callback({
                     text: `✅ **Pro会員になりました！**\n\n💰 受領額: ${result.amount} USDC\n⭐ ${CONFIG.PRO_DURATION_DAYS}日間無制限でご利用いただけます\n\nご質問をどうぞ！`,
+                    source: message.content.source,
+                });
+            } else if (result.isDaily) {
+                db.grantDaily(userId);
+                await callback({
+                    text: `✅ **Dailyプランが有効になりました！**\n\n💰 受領額: ${result.amount} USDC\n📅 本日中 ${CONFIG.DAILY_QUERY_LIMIT}回までご利用いただけます\n\nご質問をどうぞ！`,
                     source: message.content.source,
                 });
             } else {
@@ -934,7 +1045,8 @@ const x402Provider: Provider = {
 
         // NO ACCESS - Return blocking instruction
         const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
-        const paymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
+        const singlePaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_CREDIT_PRICE_USDC}`;
+        const dailyPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
         const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
 
         const blockingMessage = `
@@ -947,10 +1059,12 @@ Instead, respond ONLY with this exact payment message:
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
 📦 **料金プラン**
-• 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日
 • ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
 
-👉 <a href="${paymentLink}">単発購入</a>
+👉 <a href="${singlePaymentLink}">単発購入</a>
+👉 <a href="${dailyPaymentLink}">Daily購入</a>
 👉 <a href="${proPaymentLink}">Pro購入</a>
 
 ✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください
@@ -963,7 +1077,7 @@ Instead, respond ONLY with this exact payment message:
         return {
             text: blockingMessage,
             values: { hasAccess: false, paymentRequired: true },
-            data: { paymentLink, proPaymentLink }
+            data: { singlePaymentLink, dailyPaymentLink, proPaymentLink }
         };
     },
 };
@@ -1022,7 +1136,8 @@ const x402PaymentGateEvaluator: Evaluator = {
 
         logger.info(`[X402_EVALUATOR:${agentName}] 🚫 BLOCKING RESPONSE - User ${userId} has no access`);
 
-        const paymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
+        const singlePaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_CREDIT_PRICE_USDC}`;
+        const dailyPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
         const proPaymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
 
         // Return the payment required message - this should replace the agent's response
@@ -1032,10 +1147,12 @@ const x402PaymentGateEvaluator: Evaluator = {
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
 📦 **料金プラン**
-• 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• 🎫 単発: ${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC / 1回
+• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日
 • ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限
 
-👉 <a href="${paymentLink}">単発購入 (${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC)</a>
+👉 <a href="${singlePaymentLink}">単発購入 (${CONFIG.SINGLE_CREDIT_PRICE_USDC} USDC)</a>
+👉 <a href="${dailyPaymentLink}">Daily購入 (${CONFIG.DAILY_PRICE_USDC} USDC)</a>
 👉 <a href="${proPaymentLink}">Pro購入 (${CONFIG.PRO_PRICE_USDC} USDC)</a>
 
 ✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください
@@ -1054,7 +1171,7 @@ const x402PaymentGateEvaluator: Evaluator = {
 // ============================================
 export const x402Plugin: Plugin = {
     name: 'x402',
-    description: 'x402 Payment Gating with SQLite persistence (Free/Pro/Credits) - using sql.js (pure JS)',
+    description: 'x402 Payment Gating with SQLite persistence (Free/Daily/Pro) - using sql.js (pure JS)',
     services: [X402Service],
     // CHECK_PAYMENT must be FIRST to intercept messages when no access
     actions: [checkPaymentAction, adminLoginAction, adminLogoutAction, statusAction, verifyPaymentAction],
