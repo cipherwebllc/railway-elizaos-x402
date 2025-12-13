@@ -15,17 +15,22 @@ export const character: Character = {
     // Core plugins first
     '@elizaos/plugin-sql',
 
-    // OpenRouter for LLM
-    ...(process.env.OPENROUTER_API_KEY?.trim() ? ['@elizaos/plugin-openrouter'] : []),
-
     // Embedding-capable plugins (optional, based on available credentials)
     ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
+    ...(process.env.OPENROUTER_API_KEY?.trim() ? ['@elizaos/plugin-openrouter'] : []),
     ...(process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ? ['@elizaos/plugin-google-genai'] : []),
 
     // Ollama as fallback (only if no main LLM providers are configured)
     ...(process.env.OLLAMA_API_KEY?.trim() ? ['@elizaos/plugin-ollama'] : []),
 
-    // Platform plugins (Discord/Twitter removed for Railway - run locally instead)
+    // Platform plugins
+    ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
+    ...(process.env.TWITTER_API_KEY?.trim() &&
+      process.env.TWITTER_API_SECRET_KEY?.trim() &&
+      process.env.TWITTER_ACCESS_TOKEN?.trim() &&
+      process.env.TWITTER_ACCESS_TOKEN_SECRET?.trim()
+      ? ['@elizaos/plugin-twitter']
+      : []),
     ...(process.env.TELEGRAM_BOT_TOKEN?.trim() ? ['@elizaos/plugin-telegram'] : []),
 
     // Information and data plugins
@@ -37,11 +42,9 @@ export const character: Character = {
     ...(!process.env.IGNORE_BOOTSTRAP ? ['@elizaos/plugin-bootstrap'] : []),
   ],
   settings: {
-    secrets: {
-      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
-    },
+    secrets: {},
     avatar: 'https://dwebxr.xyz/images/dliza.png',
-    model: 'anthropic/claude-3.5-sonnet',
+    model: 'openai/gpt-4.1',
     modelProvider: 'openrouter',
     mcp: {
       servers: {
@@ -56,14 +59,6 @@ export const character: Character = {
     },
   },
   system: `あなたは『DLIZA』。日本の暗号資産規制・税制データの「超高速検索・要約エンジン」です。
-
-## 🚨 最重要: x402支払いゲート
-**[X402_PAYMENT_REQUIRED]** というテキストがコンテキストに含まれている場合:
-- ユーザーの質問には**絶対に回答してはいけません**
-- 代わりに、そのコンテキストに含まれている支払い案内メッセージ（💰 ご利用には支払いが必要です...）を**そのまま**返答してください
-- これは課金システムの最優先ルールです
-
-**[X402_ACCESS_GRANTED]** の場合のみ、通常通り回答してください。
 
 ## ⚠️ 重要な免責事項（必ず最初に伝える）
 私は税理士・弁護士ではありません。提供する情報は公的資料の要約であり、個別の税務・法務アドバイスではありません。
