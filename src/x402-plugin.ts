@@ -867,13 +867,13 @@ const checkPaymentAction: Action = {
         logger.info(`[CHECK_PAYMENT:${agentName}] 🚫 HANDLER EXECUTING - Sending payment prompt to ${userId}`);
 
         // USDC links (Base)
-        const usdcSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_PRICE_USDC}&token=USDC`;
-        const usdcDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}&token=USDC`;
-        const usdcProLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}&token=USDC`;
+        const usdcSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=single&amount=${CONFIG.SINGLE_PRICE_USDC}`;
+        const usdcDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
+        const usdcProLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=pro&amount=${CONFIG.PRO_PRICE_USDC}`;
         // JPYC links (Polygon)
-        const jpycSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=single&amount=${CONFIG.SINGLE_PRICE_JPYC}&token=JPYC`;
-        const jpycDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=daily&amount=${CONFIG.DAILY_PRICE_JPYC}&token=JPYC`;
-        const jpycProLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&plan=pro&amount=${CONFIG.PRO_PRICE_JPYC}&token=JPYC`;
+        const jpycSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=single&amount=${CONFIG.SINGLE_PRICE_JPYC}`;
+        const jpycDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=daily&amount=${CONFIG.DAILY_PRICE_JPYC}`;
+        const jpycProLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=pro&amount=${CONFIG.PRO_PRICE_JPYC}`;
 
         const responseText = `💰 **ご利用には支払いが必要です**
 
