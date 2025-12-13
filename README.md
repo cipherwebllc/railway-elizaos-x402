@@ -141,7 +141,7 @@ When deploying to Railway, set the following environment variables in your Railw
 |--------|-------------|----------------|------|
 | **単発** | 0.1 USDC | 15 JPYC | 1回分のクレジット |
 | **Daily** | 1 USDC | 150 JPYC | 30回/日（当日中有効） |
-| ~~Pro~~ | - | - | 🚧 準備中（Postgres対応後に追加予定） |
+| **Pro** | 9 USDC | 1500 JPYC | 30日間無制限 |
 
 無料枠: **3回/日**
 
@@ -163,10 +163,10 @@ When deploying to Railway, set the following environment variables in your Railw
    📦 料金プラン
 
    🔵 Base (USDC)
-   • 単発: 0.1 USDC | Daily: 1 USDC
+   • 単発: 0.1 USDC | Daily: 1 USDC | Pro: 9 USDC
 
    🟣 Polygon (JPYC)
-   • 単発: 15 JPYC | Daily: 150 JPYC
+   • 単発: 15 JPYC | Daily: 150 JPYC | Pro: 1500 JPYC
 
    👉 支払いページへ
    ```
