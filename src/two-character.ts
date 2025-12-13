@@ -173,7 +173,7 @@ export const twoCharacter: Character = {
             OLLAMA_API_KEY: process.env.OLLAMA_API_KEY,
         },
         avatar: 'https://dwebxr.xyz/images/coodao.png',
-        model: 'anthropic/claude-sonnet-4',
+        model: 'anthropic/claude-sonnet-4.5',
         modelProvider: 'openrouter',
         discord: {
             shouldIgnoreBotMessages: true,

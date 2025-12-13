@@ -47,7 +47,7 @@ export const character: Character = {
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     },
     avatar: 'https://dwebxr.xyz/images/dliza.png',
-    model: 'openai/gpt-4.1',
+    model: 'openai/gpt-5.1',
     modelProvider: 'openrouter',
     mcp: {
       servers: {
