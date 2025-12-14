@@ -206,8 +206,8 @@ export const twoCharacter: Character = {
         ...(process.env.OLLAMA_API_KEY?.trim() ? ['@elizaos/plugin-ollama'] : []),
 
         // Information and data plugins
-    // '@elizaos/plugin-coinmarketcap',
-    // '@elizaos/plugin-defillama',      // ← これもコメントアウト
+        '@elizaos/plugin-coinmarketcap',
+        '@elizaos/plugin-defillama',
 
         // Bootstrap plugin
         '@elizaos/plugin-bootstrap',
