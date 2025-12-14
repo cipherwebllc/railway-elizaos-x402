@@ -184,26 +184,23 @@ export const twoCharacter: Character = {
     plugins: [
         // Core plugins first
         '@elizaos/plugin-sql',
+
+        // OpenRouter plugin (required for LLM) - always load
+        '@elizaos/plugin-openrouter',
+
         // Platform plugins
         ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
 
-        // Embedding-capable plugins (optional, based on available credentials)
+        // Embedding-capable plugins (optional)
         ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
-        ...(process.env.OPENROUTER_API_KEY?.trim() ? ['@elizaos/plugin-openrouter'] : []),
         ...(process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ? ['@elizaos/plugin-google-genai'] : []),
-
-        // Ollama as fallback (only if no main LLM providers are configured)
         ...(process.env.OLLAMA_API_KEY?.trim() ? ['@elizaos/plugin-ollama'] : []),
 
         // Information and data plugins
         '@elizaos/plugin-coinmarketcap',
         '@elizaos/plugin-defillama',
-        ...(process.env.GITHUB_TOKEN?.trim() ? ['@elizaos/plugin-github'] : []),
 
         // Bootstrap plugin
-        ...(!process.env.IGNORE_BOOTSTRAP ? ['@elizaos/plugin-bootstrap'] : []),
-
-        // Twitter plugin (for Coo's autonomous posting and mentions)
-        ...(process.env.TWITTER_USERNAME?.trim() ? ['@elizaos/plugin-twitter'] : []),
+        '@elizaos/plugin-bootstrap',
     ],
 };
