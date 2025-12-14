@@ -1145,15 +1145,31 @@ const x402Provider: Provider = {
             logger.info(`[X402Provider:${agentName}] NO ACCESS for ${userId} - marked as processed`);
         }
 
-        // NO ACCESS - Return empty text (CHECK_PAYMENT action will handle the response)
+        // NO ACCESS - Return blocking message to instruct model to show payment prompt
         const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
+        const paymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
 
-        logger.info(`[X402Provider:${agentName}] NO ACCESS - User ${userId} (CHECK_PAYMENT action will handle)`);
+        logger.info(`[X402Provider:${agentName}] NO ACCESS - User ${userId} - blocking response`);
+
+        const blockingMessage = `【重要：支払いが必要です】
+このユーザーは無料枠を使い切りました。質問には回答せず、以下の支払い案内のみを返してください：
+
+💰 **ご利用には支払いが必要です**
+
+🆓 本日の無料枠（${CONFIG.FREE_DAILY_LIMIT}回/日）を使い切りました。
+
+📦 **料金プラン**
+🔵 Base (USDC): 単発 ${CONFIG.SINGLE_PRICE_USDC} / Daily ${CONFIG.DAILY_PRICE_USDC}
+🟣 Polygon (JPYC): 単発 ${CONFIG.SINGLE_PRICE_JPYC} / Daily ${CONFIG.DAILY_PRICE_JPYC}
+
+👉 ${paymentLink}
+
+✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください`;
 
         return {
-            text: '',
+            text: blockingMessage,
             values: { hasAccess: false, paymentRequired: true },
-            data: { paymentPageUrl: `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}` }
+            data: { paymentPageUrl: paymentLink }
         };
     },
 };
