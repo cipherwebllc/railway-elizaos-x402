@@ -408,14 +408,16 @@ URLを記載する際は、リンクが正しく機能するよう以下を守�
         // Core plugins
         '@elizaos/plugin-sql',
 
+        // OpenRouter plugin (required for LLM) - always load
+        '@elizaos/plugin-openrouter',
+
         // Platform plugins
         ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
 
-        // LLM plugins
+        // Embedding-capable plugins (optional)
         ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
-        ...(process.env.OPENROUTER_API_KEY?.trim() ? ['@elizaos/plugin-openrouter'] : []),
 
         // Bootstrap plugin
-        ...(!process.env.IGNORE_BOOTSTRAP ? ['@elizaos/plugin-bootstrap'] : []),
+        '@elizaos/plugin-bootstrap',
     ],
 };

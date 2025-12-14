@@ -15,31 +15,24 @@ export const character: Character = {
     // Core plugins first
     '@elizaos/plugin-sql',
 
-    // Embedding-capable plugins (optional, based on available credentials)
-    ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
-    ...(process.env.OPENROUTER_API_KEY?.trim() ? ['@elizaos/plugin-openrouter'] : []),
-    ...(process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ? ['@elizaos/plugin-google-genai'] : []),
+    // OpenRouter plugin (required for LLM) - always load
+    '@elizaos/plugin-openrouter',
 
-    // Ollama as fallback (only if no main LLM providers are configured)
+    // Embedding-capable plugins (optional)
+    ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
+    ...(process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ? ['@elizaos/plugin-google-genai'] : []),
     ...(process.env.OLLAMA_API_KEY?.trim() ? ['@elizaos/plugin-ollama'] : []),
 
     // Platform plugins
     ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
-    ...(process.env.TWITTER_API_KEY?.trim() &&
-      process.env.TWITTER_API_SECRET_KEY?.trim() &&
-      process.env.TWITTER_ACCESS_TOKEN?.trim() &&
-      process.env.TWITTER_ACCESS_TOKEN_SECRET?.trim()
-      ? ['@elizaos/plugin-twitter']
-      : []),
     ...(process.env.TELEGRAM_BOT_TOKEN?.trim() ? ['@elizaos/plugin-telegram'] : []),
 
     // Information and data plugins
     '@elizaos/plugin-coinmarketcap',
     '@elizaos/plugin-defillama',
-    ...(process.env.GITHUB_TOKEN?.trim() ? ['@elizaos/plugin-github'] : []),
 
     // Bootstrap plugin
-    ...(!process.env.IGNORE_BOOTSTRAP ? ['@elizaos/plugin-bootstrap'] : []),
+    '@elizaos/plugin-bootstrap',
   ],
   settings: {
     secrets: {
