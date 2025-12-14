@@ -5,6 +5,9 @@ import {
   type ProjectAgent,
 } from "@elizaos/core";
 
+// OpenRouter plugin for LLM
+import openrouterPlugin from "@elizaos/plugin-openrouter";
+
 import { coinGeckoPlugin } from "./coingecko-plugin.ts";
 import { newsPlugin } from "./news-plugin.ts";
 import { gasMonitorPlugin } from "./gas-monitor-plugin.ts";
@@ -29,6 +32,7 @@ const baseAgent: ProjectAgent = {
     logger.info({ name: baseCharacter.name }, "Base agent initialized");
   },
   plugins: [
+    openrouterPlugin,
     coinGeckoPlugin,
     newsPlugin,
     gasMonitorPlugin,
@@ -50,6 +54,7 @@ const twoAgent: ProjectAgent = {
     );
   },
   plugins: [
+    openrouterPlugin,
     coinGeckoPlugin,
     newsPlugin,
     gasMonitorPlugin,
@@ -71,6 +76,7 @@ const alizaAgent: ProjectAgent = {
     );
   },
   plugins: [
+    openrouterPlugin,
     // x402Pluginは含めない（課金なし）
     newsPlugin,
     plugin,
