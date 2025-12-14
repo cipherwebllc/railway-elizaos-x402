@@ -440,15 +440,38 @@ const processedMessages = new Map<string, {
     timestamp: number;
 }>();
 
-// Clean up old entries every 5 minutes
+// Configuration for message cache
+const MESSAGE_CACHE_MAX_SIZE = 500;  // Max entries to prevent memory bloat
+const MESSAGE_CACHE_TTL = 2 * 60 * 1000;  // 2 minutes (reduced from 5)
+const MESSAGE_CACHE_CLEANUP_INTERVAL = 30 * 1000;  // 30 seconds (reduced from 60)
+
+// Clean up old entries and enforce max size
 setInterval(() => {
-    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+    const cutoff = Date.now() - MESSAGE_CACHE_TTL;
+    let deleted = 0;
+
     for (const [key, value] of processedMessages.entries()) {
-        if (value.timestamp < fiveMinutesAgo) {
+        if (value.timestamp < cutoff) {
             processedMessages.delete(key);
+            deleted++;
         }
     }
-}, 60 * 1000);
+
+    // If still over max size, remove oldest entries
+    if (processedMessages.size > MESSAGE_CACHE_MAX_SIZE) {
+        const entries = Array.from(processedMessages.entries())
+            .sort((a, b) => a[1].timestamp - b[1].timestamp);
+        const toRemove = entries.slice(0, processedMessages.size - MESSAGE_CACHE_MAX_SIZE);
+        for (const [key] of toRemove) {
+            processedMessages.delete(key);
+            deleted++;
+        }
+    }
+
+    if (deleted > 0) {
+        logger.debug(`[X402] Cleaned up ${deleted} old message cache entries, size: ${processedMessages.size}`);
+    }
+}, MESSAGE_CACHE_CLEANUP_INTERVAL);
 
 function extractUserId(message: Memory): string {
     // Log ALL possible user ID sources for debugging
