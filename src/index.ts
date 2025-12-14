@@ -55,7 +55,7 @@ const twoAgent: ProjectAgent = {
   },
   plugins: [
     openrouterPlugin,
-    coinGeckoPlugin,
+    // coinGeckoPlugin を削除 - MCPを使用
     newsPlugin,
     gasMonitorPlugin,
     japanRegulationPlugin,
