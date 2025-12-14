@@ -146,7 +146,7 @@ const helloWorldProvider: Provider = {
     _state: State
   ): Promise<ProviderResult> => {
     return {
-      text: 'I am a provider',
+      text: '',
       values: {},
       data: {},
     };
