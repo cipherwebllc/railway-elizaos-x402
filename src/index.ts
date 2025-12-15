@@ -7,6 +7,7 @@ import {
 
 // OpenRouter plugin for LLM
 import openrouterPlugin from "@elizaos/plugin-openrouter";
+import mcpPlugin from "@elizaos/plugin-mcp";
 
 import { coinGeckoPlugin } from "./coingecko-plugin.ts";
 import { newsPlugin } from "./news-plugin.ts";
@@ -55,6 +56,7 @@ const twoAgent: ProjectAgent = {
   },
   plugins: [
     openrouterPlugin,
+    mcpPlugin,  // MCP (appfav-gateway) を使用
     // coinGeckoPlugin を削除 - MCPを使用
     newsPlugin,
     gasMonitorPlugin,
@@ -77,6 +79,7 @@ const alizaAgent: ProjectAgent = {
   },
   plugins: [
     openrouterPlugin,
+    mcpPlugin,  // MCP (appfav-gateway) を使用
     // x402Pluginは含めない（課金なし）
     newsPlugin,
     plugin,
