@@ -180,10 +180,12 @@ export const twoCharacter: Character = {
             shouldIgnoreDirectMessages: false,
             shouldRespondOnlyToMentions: false,
         },
-        mcpServers: {
-            "appfav-gateway": {
-                type: "sse",
-                url: process.env.MCP_GATEWAY_URL
+        mcp: {
+            servers: {
+                "appfav-gateway": {
+                    type: "sse",
+                    url: process.env.MCP_GATEWAY_URL
+                }
             }
         }
     },
