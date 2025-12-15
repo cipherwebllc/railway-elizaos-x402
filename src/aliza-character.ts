@@ -403,6 +403,12 @@ URLを記載する際は、リンクが正しく機能するよう以下を守�
             shouldIgnoreDirectMessages: false,
             shouldRespondOnlyToMentions: false,
         },
+        mcpServers: {
+            "appfav-gateway": {
+                type: "sse",
+                url: process.env.MCP_GATEWAY_URL,
+            }
+        }
     },
     plugins: [
         // Core plugins
@@ -419,5 +425,8 @@ URLを記載する際は、リンクが正しく機能するよう以下を守�
 
         // Bootstrap plugin
         '@elizaos/plugin-bootstrap',
+
+        // MCP plugin for appfav-gateway
+        '@elizaos/plugin-mcp',
     ],
 };
