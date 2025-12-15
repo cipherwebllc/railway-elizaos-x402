@@ -184,6 +184,9 @@ export const twoCharacter: Character = {
             "appfav-gateway": {
                 type: "sse",
                 url: process.env.MCP_GATEWAY_URL,
+                headers: {
+                    "X-ELIZA-API-KEY": process.env.MCP_API_KEY
+                }
             }
         }
     },
