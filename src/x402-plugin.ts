@@ -753,13 +753,36 @@ async function verifyPaymentOnChain(txHash: string): Promise<PaymentVerification
 // Status Check Action
 const statusAction: Action = {
     name: 'CHECK_STATUS',
-    similes: ['ステータス', 'status', '残り回数', '利用状況', 'マイステータス'],
-    description: 'Check user subscription status and remaining credits',
+    similes: ['ステータス', 'status', '残り回数', '利用状況', 'マイステータス', 'x402'],
+    description: 'PRIORITY: Check user subscription status and remaining credits. Triggers on /status, x402, ステータス commands.',
 
-    validate: async (_runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
-        const text = (message.content.text || '').toLowerCase();
-        return text.includes('ステータス') || text.includes('status') ||
-               text.includes('残り回数') || text.includes('利用状況');
+    validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
+        const text = (message.content.text || '').trim();
+        const textLower = text.toLowerCase();
+        const agentName = runtime.character?.name || 'unknown';
+
+        // Strict matching for status commands
+        const isStatusCommand =
+            // Exact matches (single word)
+            textLower === 'ステータス' ||
+            textLower === 'status' ||
+            textLower === 'x402' ||
+            textLower === '/status' ||
+            textLower === '/x402' ||
+            // Contains specific phrases
+            textLower.includes('残り回数') ||
+            textLower.includes('利用状況') ||
+            textLower.includes('x402 status') ||
+            textLower.includes('x402 ステータス') ||
+            // Starts with command prefix
+            textLower.startsWith('/status') ||
+            textLower.startsWith('x402 ');
+
+        if (isStatusCommand) {
+            logger.info(`[CHECK_STATUS:${agentName}] ✅ Matched status command: "${text}"`);
+        }
+
+        return isStatusCommand;
     },
 
     handler: async (
@@ -1286,7 +1309,8 @@ export const x402Plugin: Plugin = {
     description: 'x402 Payment Gating with SQLite persistence (Free/Daily/Pro) - using sql.js (pure JS)',
     services: [X402Service],
     // CHECK_PAYMENT must be FIRST to intercept messages when no access
-    actions: [checkPaymentAction, adminLoginAction, adminLogoutAction, statusAction, verifyPaymentAction],
+    // statusAction FIRST for priority matching, then payment-related actions
+    actions: [statusAction, verifyPaymentAction, adminLoginAction, adminLogoutAction, checkPaymentAction],
     providers: [x402Provider],
     evaluators: [x402PaymentGateEvaluator],
     init: async (_config: Record<string, string>) => {
