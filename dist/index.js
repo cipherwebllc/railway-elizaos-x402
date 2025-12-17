@@ -76184,7 +76184,12 @@ var checkReputationAction = {
   name: "CHECK_REPUTATION_ERC8004",
   similes: ["CHECK_REPUTATION", "GET_REPUTATION_SCORE", "VIEW_REPUTATION"],
   description: "Check the reputation score of an agent in the ERC-8004 system",
-  validate: async (runtime2, _message, _state) => {
+  validate: async (runtime2, message, _state) => {
+    const text2 = (message.content?.text || "").toLowerCase();
+    const hasReputationKeyword = text2.includes("reputation") || text2.includes("評判") || text2.includes("score") || text2.includes("8004") || text2.includes("on-chain") || text2.includes("onchain");
+    if (!hasReputationKeyword) {
+      return false;
+    }
     const service = runtime2.getService(ERC8004_SERVICE_NAME);
     return service !== null;
   },
@@ -76779,7 +76784,12 @@ var addRegistryAction = {
   name: "ADD_REGISTRY_ERC8004",
   similes: ["ADD_ERC8004_REGISTRY", "REGISTER_NEW_REGISTRY", "ADD_REPUTATION_REGISTRY"],
   description: "Add a new ERC-8004 registry to the list of monitored registries",
-  validate: async (runtime2, _message, _state) => {
+  validate: async (runtime2, message, _state) => {
+    const text2 = (message.content?.text || "").toLowerCase();
+    const hasRegistryKeyword = text2.includes("add registry") || text2.includes("add erc8004") || text2.includes("add erc-8004") || text2.includes("new registry") || text2.includes("register registry") || text2.includes("レジストリ追加");
+    if (!hasRegistryKeyword) {
+      return false;
+    }
     const service = runtime2.getService(ERC8004_SERVICE_NAME);
     if (!service) {
       logger26.warn("ERC8004Service not available");
@@ -76973,7 +76983,12 @@ var removeRegistryAction = {
   name: "REMOVE_REGISTRY_ERC8004",
   similes: ["DELETE_REGISTRY_ERC8004", "REMOVE_ERC8004_REGISTRY", "DELETE_REPUTATION_REGISTRY"],
   description: "Remove an ERC-8004 registry from the list (cannot remove default registries)",
-  validate: async (runtime2, _message, _state) => {
+  validate: async (runtime2, message, _state) => {
+    const text2 = (message.content?.text || "").toLowerCase();
+    const hasRemoveKeyword = text2.includes("remove registry") || text2.includes("delete registry") || text2.includes("remove erc8004") || text2.includes("remove erc-8004") || text2.includes("レジストリ削除");
+    if (!hasRemoveKeyword) {
+      return false;
+    }
     const service = runtime2.getService(ERC8004_SERVICE_NAME);
     if (!service) {
       logger27.warn("ERC8004Service not available");
@@ -77112,7 +77127,12 @@ var listRegistriesAction = {
   name: "LIST_REGISTRIES_ERC8004",
   similes: ["SHOW_REGISTRIES_ERC8004", "LIST_ERC8004_REGISTRIES", "SHOW_REPUTATION_REGISTRIES"],
   description: "List all configured ERC-8004 registries",
-  validate: async (runtime2, _message, _state) => {
+  validate: async (runtime2, message, _state) => {
+    const text2 = (message.content?.text || "").toLowerCase();
+    const hasListKeyword = text2.includes("list registr") || text2.includes("show registr") || text2.includes("erc8004 registr") || text2.includes("erc-8004 registr") || text2.includes("what registr") || text2.includes("レジストリ一覧") || text2.includes("registries configured");
+    if (!hasListKeyword) {
+      return false;
+    }
     const service = runtime2.getService(ERC8004_SERVICE_NAME);
     if (!service) {
       logger28.warn("ERC8004Service not available");
@@ -77589,5 +77609,5 @@ export {
   character
 };
 
-//# debugId=4B86C69848FAF23564756E2164756E21
+//# debugId=56D04A7698D805A264756E2164756E21
 //# sourceMappingURL=index.js.map

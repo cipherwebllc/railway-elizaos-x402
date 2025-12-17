@@ -72,7 +72,21 @@ export const checkReputationAction: Action = {
     similes: ['CHECK_REPUTATION', 'GET_REPUTATION_SCORE', 'VIEW_REPUTATION'],
     description: 'Check the reputation score of an agent in the ERC-8004 system',
 
-    validate: async (runtime: IAgentRuntime, _message: Memory, _state: State | undefined): Promise<boolean> => {
+    validate: async (runtime: IAgentRuntime, message: Memory, _state: State | undefined): Promise<boolean> => {
+        // Only validate if message mentions reputation-related keywords
+        const text = (message.content?.text || '').toLowerCase();
+        const hasReputationKeyword =
+            text.includes('reputation') ||
+            text.includes('評判') ||
+            text.includes('score') ||
+            text.includes('8004') ||
+            text.includes('on-chain') ||
+            text.includes('onchain');
+
+        if (!hasReputationKeyword) {
+            return false;
+        }
+
         const service = runtime.getService<ERC8004Service>(ERC8004_SERVICE_NAME);
         return service !== null;
     },

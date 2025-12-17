@@ -15,7 +15,22 @@ export const listRegistriesAction: Action = {
     similes: ['SHOW_REGISTRIES_ERC8004', 'LIST_ERC8004_REGISTRIES', 'SHOW_REPUTATION_REGISTRIES'],
     description: 'List all configured ERC-8004 registries',
 
-    validate: async (runtime: IAgentRuntime, _message: Memory, _state: State | undefined): Promise<boolean> => {
+    validate: async (runtime: IAgentRuntime, message: Memory, _state: State | undefined): Promise<boolean> => {
+        // Only validate if message mentions registry listing keywords
+        const text = (message.content?.text || '').toLowerCase();
+        const hasListKeyword =
+            text.includes('list registr') ||
+            text.includes('show registr') ||
+            text.includes('erc8004 registr') ||
+            text.includes('erc-8004 registr') ||
+            text.includes('what registr') ||
+            text.includes('レジストリ一覧') ||
+            text.includes('registries configured');
+
+        if (!hasListKeyword) {
+            return false;
+        }
+
         const service = runtime.getService<ERC8004Service>(ERC8004_SERVICE_NAME);
         if (!service) {
             logger.warn('ERC8004Service not available');
