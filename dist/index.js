@@ -74887,7 +74887,7 @@ var x402Plugin = {
   name: "x402",
   description: "x402 Payment Gating with SQLite persistence (Free/Daily/Pro) - using sql.js (pure JS)",
   services: [X402Service],
-  actions: [statusAction, verifyPaymentAction, adminLoginAction, adminLogoutAction, checkPaymentAction],
+  actions: [checkPaymentAction, statusAction, verifyPaymentAction, adminLoginAction, adminLogoutAction],
   providers: [x402Provider],
   evaluators: [x402PaymentGateEvaluator],
   init: async (_config) => {
@@ -77589,5 +77589,5 @@ export {
   character
 };
 
-//# debugId=1D501339CB46CF6564756E2164756E21
+//# debugId=4B86C69848FAF23564756E2164756E21
 //# sourceMappingURL=index.js.map
