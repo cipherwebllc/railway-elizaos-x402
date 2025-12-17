@@ -31,6 +31,7 @@
     "@elizaos/client": "^1.6.5",
     "@elizaos/core": "^1.6.5",
     "@elizaos/plugin-anthropic": "^1.5.12",
+    "@elizaos/plugin-analytics": "^0.1.0",
     "@elizaos/plugin-bootstrap": "^1.6.5",
     "@elizaos/plugin-browser": "^1.0.3",
     "@elizaos/plugin-coinmarketcap": "^1.0.1",
