@@ -761,6 +761,11 @@ const statusAction: Action = {
         const textLower = text.toLowerCase();
         const agentName = runtime.character?.name || 'unknown';
 
+        // Only respond from Dliza to avoid duplicate responses
+        if (agentName !== 'Dliza') {
+            return false;
+        }
+
         // Strict matching for status commands
         const isStatusCommand =
             // Exact matches (single word)
