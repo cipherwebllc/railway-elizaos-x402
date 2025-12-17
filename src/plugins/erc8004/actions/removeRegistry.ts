@@ -57,7 +57,20 @@ export const removeRegistryAction: Action = {
     similes: ['DELETE_REGISTRY_ERC8004', 'REMOVE_ERC8004_REGISTRY', 'DELETE_REPUTATION_REGISTRY'],
     description: 'Remove an ERC-8004 registry from the list (cannot remove default registries)',
 
-    validate: async (runtime: IAgentRuntime, _message: Memory, _state: State | undefined): Promise<boolean> => {
+    validate: async (runtime: IAgentRuntime, message: Memory, _state: State | undefined): Promise<boolean> => {
+        // Only validate if message mentions registry removal keywords
+        const text = (message.content?.text || '').toLowerCase();
+        const hasRemoveKeyword =
+            text.includes('remove registry') ||
+            text.includes('delete registry') ||
+            text.includes('remove erc8004') ||
+            text.includes('remove erc-8004') ||
+            text.includes('レジストリ削除');
+
+        if (!hasRemoveKeyword) {
+            return false;
+        }
+
         const service = runtime.getService<ERC8004Service>(ERC8004_SERVICE_NAME);
         if (!service) {
             logger.warn('ERC8004Service not available');
