@@ -25,6 +25,7 @@ import { alizaCharacter } from "./aliza-character.ts";
 
 import plugin from "./plugin.ts"; // starter plugin
 import { x402Plugin } from "./x402-plugin.ts";
+import { erc8004Plugin } from "./plugins/erc8004/index.ts";
 
 // 1体目
 const baseAgent: ProjectAgent = {
@@ -41,6 +42,7 @@ const baseAgent: ProjectAgent = {
     deFiYieldPlugin,
     exchangeMonitorPlugin,
     x402Plugin,
+    erc8004Plugin,  // ERC-8004 読み取り専用モード
     plugin,
   ],
 };
@@ -64,6 +66,7 @@ const twoAgent: ProjectAgent = {
     deFiYieldPlugin,
     exchangeMonitorPlugin,
     x402Plugin,
+    erc8004Plugin,  // ERC-8004 読み取り専用モード
     plugin,
   ],
 };
@@ -82,6 +85,7 @@ const alizaAgent: ProjectAgent = {
     mcpPlugin,  // MCP (appfav-gateway) を使用
     // x402Pluginは含めない（課金なし）
     newsPlugin,
+    erc8004Plugin,  // ERC-8004 読み取り専用モード
     plugin,
   ],
 };
