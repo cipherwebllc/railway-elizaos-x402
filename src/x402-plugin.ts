@@ -1313,9 +1313,9 @@ export const x402Plugin: Plugin = {
     name: 'x402',
     description: 'x402 Payment Gating with SQLite persistence (Free/Daily/Pro) - using sql.js (pure JS)',
     services: [X402Service],
-    // CHECK_PAYMENT must be FIRST to intercept messages when no access
-    // statusAction FIRST for priority matching, then payment-related actions
-    actions: [statusAction, verifyPaymentAction, adminLoginAction, adminLogoutAction, checkPaymentAction],
+    // CRITICAL: checkPaymentAction MUST be FIRST to intercept ALL messages when no access
+    // This ensures it takes priority over bootstrap's RESPOND action
+    actions: [checkPaymentAction, statusAction, verifyPaymentAction, adminLoginAction, adminLogoutAction],
     providers: [x402Provider],
     evaluators: [x402PaymentGateEvaluator],
     init: async (_config: Record<string, string>) => {
