@@ -191,7 +191,7 @@ When deploying to Railway, set the following environment variables in your Railw
 
 | 項目 | 詳細 |
 |------|------|
-| **Payment Page** | [x402payment-page](https://github.com/cipherwebllc/x402peyment-page) (Vercel/Netlify) |
+| **Payment Page** | [x402payment-page](https://github.com/cipherwebllc/x402payment-page) (Vercel/Netlify) |
 | **Database** | sql.js (純粋JavaScript SQLite - ネイティブバインディング不要) |
 | **Verification** | Ethers.js v6 でブロックチェーン検証 |
 
