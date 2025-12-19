@@ -42,7 +42,7 @@ const baseAgent: ProjectAgent = {
     deFiYieldPlugin,
     exchangeMonitorPlugin,
     x402Plugin,
-    erc8004Plugin,  // ERC-8004 読み取り専用モード
+    // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
 };
@@ -66,7 +66,7 @@ const twoAgent: ProjectAgent = {
     deFiYieldPlugin,
     exchangeMonitorPlugin,
     x402Plugin,
-    erc8004Plugin,  // ERC-8004 読み取り専用モード
+    // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
 };
@@ -85,7 +85,7 @@ const alizaAgent: ProjectAgent = {
     mcpPlugin,  // MCP (appfav-gateway) を使用
     // x402Pluginは含めない（課金なし）
     newsPlugin,
-    erc8004Plugin,  // ERC-8004 読み取り専用モード
+    // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
 };
