@@ -74556,11 +74556,13 @@ var checkPaymentAction = {
     const userId = extractUserId(message);
     const text2 = (message.content.text || "").toLowerCase();
     const agentName = runtime2.character?.name || "unknown";
-    if (agentName !== "Dliza") {
-      logger18.info(`[CHECK_PAYMENT:${agentName}] Skipping - only Dliza handles payment gate`);
+    const messageKey = getMessageKey(message);
+    logger18.info(`[CHECK_PAYMENT:${agentName}] Validating for user: ${userId}`);
+    const existingProcess = processedMessages.get(messageKey);
+    if (existingProcess?.paymentGateShown) {
+      logger18.info(`[CHECK_PAYMENT:${agentName}] Skipping - payment gate already shown by another agent`);
       return false;
     }
-    logger18.info(`[CHECK_PAYMENT:${agentName}] Validating for user: ${userId}`);
     if (text2.includes("支払いました") || text2.includes("paid") || text2.includes("0x") || text2.includes("ステータス") || text2.includes("status")) {
       logger18.info(`[CHECK_PAYMENT:${agentName}] Skipping - payment/status message`);
       return false;
@@ -74589,7 +74591,16 @@ var checkPaymentAction = {
   handler: async (runtime2, message, _state, _options, callback, _responses) => {
     const userId = extractUserId(message);
     const agentName = runtime2.character?.name || "unknown";
+    const messageKey = getMessageKey(message);
     const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || "https://x402payment.vercel.app";
+    const existing = processedMessages.get(messageKey);
+    processedMessages.set(messageKey, {
+      userId,
+      hasAccess: false,
+      consumed: existing?.consumed || false,
+      paymentGateShown: true,
+      timestamp: Date.now()
+    });
     logger18.info(`[CHECK_PAYMENT:${agentName}] \uD83D\uDEAB HANDLER EXECUTING - Sending payment prompt to ${userId}`);
     const usdcSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=single&amount=${CONFIG.SINGLE_PRICE_USDC}`;
     const usdcDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
@@ -74628,7 +74639,10 @@ var verifyPaymentAction = {
   description: "Verifies payment on blockchain and grants access/Pro",
   validate: async (runtime2, message, _state) => {
     const agentName = runtime2.character?.name || "unknown";
-    if (agentName !== "Dliza") {
+    const messageKey = getMessageKey(message);
+    const existingProcess = processedMessages.get(messageKey);
+    if (existingProcess?.paymentGateShown) {
+      logger18.info(`[VERIFY_PAYMENT:${agentName}] Skipping - already handled by another agent`);
       return false;
     }
     const text2 = (message.content.text || "").toLowerCase();
@@ -74639,7 +74653,16 @@ var verifyPaymentAction = {
     if (!service)
       return { success: false };
     const userId = extractUserId(message);
+    const messageKey = getMessageKey(message);
     const db = service.getDatabase();
+    const existing = processedMessages.get(messageKey);
+    processedMessages.set(messageKey, {
+      userId,
+      hasAccess: existing?.hasAccess || false,
+      consumed: existing?.consumed || false,
+      paymentGateShown: true,
+      timestamp: Date.now()
+    });
     const text2 = message.content.text || "";
     const txHashMatch = text2.match(/0x[a-fA-F0-9]{64}/);
     if (!txHashMatch) {
@@ -74802,10 +74825,10 @@ var x402Provider = {
     if (access.allowed && !existingProcess) {
       if (access.consumeType) {
         service.consumeAccess(userId, access.consumeType);
-        processedMessages.set(messageKey, { userId, hasAccess: true, consumed: true, timestamp: Date.now() });
+        processedMessages.set(messageKey, { userId, hasAccess: true, consumed: true, paymentGateShown: false, timestamp: Date.now() });
         logger18.info(`[X402Provider:${agentName}] Consumed ${access.consumeType} for ${userId} (first agent)`);
       } else {
-        processedMessages.set(messageKey, { userId, hasAccess: true, consumed: false, timestamp: Date.now() });
+        processedMessages.set(messageKey, { userId, hasAccess: true, consumed: false, paymentGateShown: false, timestamp: Date.now() });
       }
       return {
         text: "",
@@ -74820,7 +74843,7 @@ var x402Provider = {
       };
     }
     if (!existingProcess) {
-      processedMessages.set(messageKey, { userId, hasAccess: false, consumed: false, timestamp: Date.now() });
+      processedMessages.set(messageKey, { userId, hasAccess: false, consumed: false, paymentGateShown: false, timestamp: Date.now() });
       logger18.info(`[X402Provider:${agentName}] NO ACCESS for ${userId} - marked as processed`);
     }
     const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || "https://x402payment.vercel.app";
@@ -74854,7 +74877,10 @@ var x402PaymentGateEvaluator = {
   alwaysRun: true,
   validate: async (runtime2, message, _state) => {
     const agentName = runtime2.character?.name || "unknown";
-    if (agentName !== "Dliza") {
+    const messageKey = getMessageKey(message);
+    const existingProcess = processedMessages.get(messageKey);
+    if (existingProcess?.paymentGateShown) {
+      logger18.info(`[X402_EVALUATOR:${agentName}] Skipping - payment gate already shown`);
       return false;
     }
     const service = runtime2.getService("x402");
@@ -77634,5 +77660,5 @@ export {
   character
 };
 
-//# debugId=3A189AFC3E23750C64756E2164756E21
+//# debugId=6909D1DEAD6346D864756E2164756E21
 //# sourceMappingURL=index.js.map
