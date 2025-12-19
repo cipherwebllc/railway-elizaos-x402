@@ -761,8 +761,8 @@ const statusAction: Action = {
         const textLower = text.toLowerCase();
         const agentName = runtime.character?.name || 'unknown';
 
-        // Only respond from Dliza to avoid duplicate responses
-        if (agentName !== 'Dliza') {
+        // Dliza and Coo can respond to payment gate
+        if (agentName !== 'Dliza' && agentName !== 'Coo') {
             return false;
         }
 
