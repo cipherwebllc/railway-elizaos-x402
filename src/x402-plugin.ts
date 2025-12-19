@@ -437,7 +437,6 @@ const processedMessages = new Map<string, {
     userId: string;
     hasAccess: boolean;
     consumed: boolean;
-    paymentGateShown: boolean;  // Track if payment gate was already shown for this message
     timestamp: number;
 }>();
 
@@ -864,16 +863,8 @@ const checkPaymentAction: Action = {
         const userId = extractUserId(message);
         const text = (message.content.text || '').toLowerCase();
         const agentName = runtime.character?.name || 'unknown';
-        const messageKey = getMessageKey(message);
 
         logger.info(`[CHECK_PAYMENT:${agentName}] Validating for user: ${userId}`);
-
-        // Check if payment gate was already shown by another agent for this message
-        const existingProcess = processedMessages.get(messageKey);
-        if (existingProcess?.paymentGateShown) {
-            logger.info(`[CHECK_PAYMENT:${agentName}] Skipping - payment gate already shown by another agent`);
-            return false;
-        }
 
         // Allow verification/status messages through
         if (text.includes('支払いました') || text.includes('paid') || text.includes('0x') ||
@@ -922,18 +913,7 @@ const checkPaymentAction: Action = {
     ): Promise<ActionResult> => {
         const userId = extractUserId(message);
         const agentName = runtime.character?.name || 'unknown';
-        const messageKey = getMessageKey(message);
         const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
-
-        // Mark payment gate as shown to prevent duplicate display by other agents
-        const existing = processedMessages.get(messageKey);
-        processedMessages.set(messageKey, {
-            userId,
-            hasAccess: false,
-            consumed: existing?.consumed || false,
-            paymentGateShown: true,
-            timestamp: Date.now()
-        });
 
         logger.info(`[CHECK_PAYMENT:${agentName}] 🚫 HANDLER EXECUTING - Sending payment prompt to ${userId}`);
 
@@ -979,17 +959,7 @@ const verifyPaymentAction: Action = {
     similes: ['I_PAID', 'PAYMENT_COMPLETE', '支払いました', 'PAID'],
     description: 'Verifies payment on blockchain and grants access/Pro',
 
-    validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
-        const agentName = runtime.character?.name || 'unknown';
-        const messageKey = getMessageKey(message);
-
-        // Check if payment verification was already handled by another agent
-        const existingProcess = processedMessages.get(messageKey);
-        if (existingProcess?.paymentGateShown) {
-            logger.info(`[VERIFY_PAYMENT:${agentName}] Skipping - already handled by another agent`);
-            return false;
-        }
-
+    validate: async (_runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
         const text = (message.content.text || '').toLowerCase();
         return text.includes('支払いました') || text.includes('paid') ||
                text.includes('0x') || text.includes('送金');
@@ -1007,18 +977,7 @@ const verifyPaymentAction: Action = {
         if (!service) return { success: false };
 
         const userId = extractUserId(message);
-        const messageKey = getMessageKey(message);
         const db = service.getDatabase();
-
-        // Mark as handled to prevent duplicate processing by other agents
-        const existing = processedMessages.get(messageKey);
-        processedMessages.set(messageKey, {
-            userId,
-            hasAccess: existing?.hasAccess || false,
-            consumed: existing?.consumed || false,
-            paymentGateShown: true,
-            timestamp: Date.now()
-        });
 
         const text = message.content.text || '';
         const txHashMatch = text.match(/0x[a-fA-F0-9]{64}/);
@@ -1214,10 +1173,10 @@ const x402Provider: Provider = {
         if (access.allowed && !existingProcess) {
             if (access.consumeType) {
                 service.consumeAccess(userId, access.consumeType);
-                processedMessages.set(messageKey, { userId, hasAccess: true, consumed: true, paymentGateShown: false, timestamp: Date.now() });
+                processedMessages.set(messageKey, { userId, hasAccess: true, consumed: true, timestamp: Date.now() });
                 logger.info(`[X402Provider:${agentName}] Consumed ${access.consumeType} for ${userId} (first agent)`);
             } else {
-                processedMessages.set(messageKey, { userId, hasAccess: true, consumed: false, paymentGateShown: false, timestamp: Date.now() });
+                processedMessages.set(messageKey, { userId, hasAccess: true, consumed: false, timestamp: Date.now() });
             }
             return {
                 text: '',
@@ -1233,7 +1192,7 @@ const x402Provider: Provider = {
         }
 
         if (!existingProcess) {
-            processedMessages.set(messageKey, { userId, hasAccess: false, consumed: false, paymentGateShown: false, timestamp: Date.now() });
+            processedMessages.set(messageKey, { userId, hasAccess: false, consumed: false, timestamp: Date.now() });
             logger.info(`[X402Provider:${agentName}] NO ACCESS for ${userId} - marked as processed`);
         }
 
@@ -1277,14 +1236,6 @@ const x402PaymentGateEvaluator: Evaluator = {
 
     validate: async (runtime: IAgentRuntime, message: Memory, _state?: State): Promise<boolean> => {
         const agentName = runtime.character?.name || 'unknown';
-        const messageKey = getMessageKey(message);
-
-        // Check if payment gate was already shown by another agent
-        const existingProcess = processedMessages.get(messageKey);
-        if (existingProcess?.paymentGateShown) {
-            logger.info(`[X402_EVALUATOR:${agentName}] Skipping - payment gate already shown`);
-            return false;
-        }
 
         // Always validate - we need to check every message
         const service = runtime.getService<X402Service>('x402');
