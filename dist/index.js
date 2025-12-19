@@ -53358,7 +53358,6 @@ var twoCharacter = {
 以下のメッセージには**絶対に応答しないでください**。これらはDlizaが担当します：
 - 「ステータス」「status」「x402」「残り回数」「利用状況」などの利用状況確認
 - 「支払いました」「paid」「0x...」などの支払い関連メッセージ
-- 支払いが必要という案内（無料枠を使い切った場合の案内はDlizaが行います）
 上記のメッセージを見た場合は、何も応答せずに完全にスキップしてください。
   `.trim(),
   bio: [
@@ -74278,7 +74277,7 @@ var statusAction = {
     const text2 = (message.content.text || "").trim();
     const textLower = text2.toLowerCase();
     const agentName = runtime2.character?.name || "unknown";
-    if (agentName !== "Dliza") {
+    if (agentName !== "Dliza" && agentName !== "Coo") {
       return false;
     }
     const isStatusCommand = textLower === "ステータス" || textLower === "status" || textLower === "x402" || textLower === "/status" || textLower === "/x402" || textLower.includes("残り回数") || textLower.includes("利用状況") || textLower.includes("x402 status") || textLower.includes("x402 ステータス") || textLower.startsWith("/status") || textLower.startsWith("x402 ");
@@ -74805,5 +74804,5 @@ export {
   character
 };
 
-//# debugId=43BEA3B0EFC1DDDC64756E2164756E21
+//# debugId=2357A18ABC57C30D64756E2164756E21
 //# sourceMappingURL=index.js.map
