@@ -864,6 +864,12 @@ const checkPaymentAction: Action = {
         const text = (message.content.text || '').toLowerCase();
         const agentName = runtime.character?.name || 'unknown';
 
+        // Only Dliza should handle payment gate to avoid duplicate responses
+        if (agentName !== 'Dliza') {
+            logger.info(`[CHECK_PAYMENT:${agentName}] Skipping - only Dliza handles payment gate`);
+            return false;
+        }
+
         logger.info(`[CHECK_PAYMENT:${agentName}] Validating for user: ${userId}`);
 
         // Allow verification/status messages through
@@ -959,7 +965,14 @@ const verifyPaymentAction: Action = {
     similes: ['I_PAID', 'PAYMENT_COMPLETE', '支払いました', 'PAID'],
     description: 'Verifies payment on blockchain and grants access/Pro',
 
-    validate: async (_runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
+    validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
+        const agentName = runtime.character?.name || 'unknown';
+
+        // Only Dliza should handle payment verification to avoid duplicate responses
+        if (agentName !== 'Dliza') {
+            return false;
+        }
+
         const text = (message.content.text || '').toLowerCase();
         return text.includes('支払いました') || text.includes('paid') ||
                text.includes('0x') || text.includes('送金');
@@ -1235,6 +1248,12 @@ const x402PaymentGateEvaluator: Evaluator = {
     alwaysRun: true, // Always run this evaluator
 
     validate: async (runtime: IAgentRuntime, message: Memory, _state?: State): Promise<boolean> => {
+        // Only Dliza should handle payment gate evaluation to avoid duplicate responses
+        const agentName = runtime.character?.name || 'unknown';
+        if (agentName !== 'Dliza') {
+            return false;
+        }
+
         // Always validate - we need to check every message
         const service = runtime.getService<X402Service>('x402');
         if (!service) {
@@ -1260,7 +1279,6 @@ const x402PaymentGateEvaluator: Evaluator = {
 
         const userId = extractUserId(message);
         const access = service.canAccess(userId);
-        const agentName = runtime.character?.name || 'unknown';
 
         // Only run evaluator if user does NOT have access
         const shouldRun = !access.allowed;

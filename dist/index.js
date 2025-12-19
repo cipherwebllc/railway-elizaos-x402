@@ -53517,6 +53517,13 @@ var twoCharacter = {
 - **自分宛てにメンションされた場合は必ず返信してください**（挨拶でも質問でも）。
 - 自分宛てでない場合で、会話が終了したと思われる場合や、単なる相槌のみの場合は応答を控えてください（IGNOREアクションを選択）。
 - 他のエージェントが既に適切な回答をしている場合も、補足がなければ静観してください。
+
+## 【重要】応答禁止ルール
+以下のメッセージには**絶対に応答しないでください**。これらはDlizaが担当します：
+- 「ステータス」「status」「x402」「残り回数」「利用状況」などの利用状況確認
+- 「支払いました」「paid」「0x...」などの支払い関連メッセージ
+- 支払いが必要という案内（無料枠を使い切った場合の案内はDlizaが行います）
+上記のメッセージを見た場合は、何も応答せずに完全にスキップしてください。
   `.trim(),
   bio: [
     "グローバルのWeb3トレンドと市場動向に強い。",
@@ -53791,7 +53798,14 @@ URLを記載する際は、リンクが正しく機能するよう以下を守�
 - 悪い例: 「AppFav（https://appfav.net）で確認」→ リンクが壊れる
 - 良い例: 「AppFav（ https://appfav.net ）で確認」
 - 良い例: 「詳しくはこちら: https://appfav.net」（URLを最後に置く）
-- 良い例: URLを独立した行に記載する`.trim(),
+- 良い例: URLを独立した行に記載する
+
+## 【重要】応答禁止ルール
+以下のメッセージには**絶対に応答しないでください**。これらはDlizaが担当します：
+- 「ステータス」「status」「x402」「残り回数」「利用状況」などの利用状況確認
+- 「支払いました」「paid」「0x...」などの支払い関連メッセージ
+- 支払いが必要という案内
+上記のメッセージを見た場合は、何も応答せずに完全にスキップしてください。`.trim(),
   bio: [
     "親しみやすく話しやすいAIアシスタント。",
     "Webアプリやツールに詳しく、ユーザーに合った提案ができる。",
@@ -74542,6 +74556,10 @@ var checkPaymentAction = {
     const userId = extractUserId(message);
     const text2 = (message.content.text || "").toLowerCase();
     const agentName = runtime2.character?.name || "unknown";
+    if (agentName !== "Dliza") {
+      logger18.info(`[CHECK_PAYMENT:${agentName}] Skipping - only Dliza handles payment gate`);
+      return false;
+    }
     logger18.info(`[CHECK_PAYMENT:${agentName}] Validating for user: ${userId}`);
     if (text2.includes("支払いました") || text2.includes("paid") || text2.includes("0x") || text2.includes("ステータス") || text2.includes("status")) {
       logger18.info(`[CHECK_PAYMENT:${agentName}] Skipping - payment/status message`);
@@ -74608,7 +74626,11 @@ var verifyPaymentAction = {
   name: "VERIFY_PAYMENT",
   similes: ["I_PAID", "PAYMENT_COMPLETE", "支払いました", "PAID"],
   description: "Verifies payment on blockchain and grants access/Pro",
-  validate: async (_runtime, message, _state) => {
+  validate: async (runtime2, message, _state) => {
+    const agentName = runtime2.character?.name || "unknown";
+    if (agentName !== "Dliza") {
+      return false;
+    }
     const text2 = (message.content.text || "").toLowerCase();
     return text2.includes("支払いました") || text2.includes("paid") || text2.includes("0x") || text2.includes("送金");
   },
@@ -74831,6 +74853,10 @@ var x402PaymentGateEvaluator = {
   similes: ["PAYMENT_GATE", "ACCESS_CONTROL"],
   alwaysRun: true,
   validate: async (runtime2, message, _state) => {
+    const agentName = runtime2.character?.name || "unknown";
+    if (agentName !== "Dliza") {
+      return false;
+    }
     const service = runtime2.getService("x402");
     if (!service) {
       logger18.warn("[X402_EVALUATOR] No x402 service found");
@@ -74847,7 +74873,6 @@ var x402PaymentGateEvaluator = {
     }
     const userId = extractUserId(message);
     const access = service.canAccess(userId);
-    const agentName = runtime2.character?.name || "unknown";
     const shouldRun = !access.allowed;
     logger18.info(`[X402_EVALUATOR:${agentName}] User ${userId}: allowed=${access.allowed}, shouldRun=${shouldRun}`);
     return shouldRun;
@@ -77609,5 +77634,5 @@ export {
   character
 };
 
-//# debugId=56D04A7698D805A264756E2164756E21
+//# debugId=3A189AFC3E23750C64756E2164756E21
 //# sourceMappingURL=index.js.map
