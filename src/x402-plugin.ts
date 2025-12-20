@@ -873,12 +873,14 @@ const checkPaymentAction: Action = {
             return false;
         }
 
-        // Check admin key
+        // Check admin key - trigger handler to show admin login success
         const envKey = process.env.ADMIN_API_KEY;
         const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
         if ((envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret') {
-            logger.info(`[CHECK_PAYMENT:${agentName}] Skipping - admin key`);
-            return false;
+            logger.info(`[CHECK_PAYMENT:${agentName}] Admin key detected - triggering admin login`);
+            // Store admin key flag in message metadata for handler
+            (message as any)._isAdminKey = true;
+            return true;  // Trigger handler for admin login
         }
 
         // Check room admin
@@ -914,6 +916,22 @@ const checkPaymentAction: Action = {
         const userId = extractUserId(message);
         const agentName = runtime.character?.name || 'unknown';
         const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
+
+        // Handle admin key login
+        if ((message as any)._isAdminKey) {
+            const service = runtime.getService<X402Service>('x402');
+            if (service) {
+                const allUserIds = getAllUserIds(message);
+                const db = service.getDatabase();
+                allUserIds.forEach(id => db.setAdmin(id, true));
+                logger.info(`[CHECK_PAYMENT:${agentName}] ✅ Admin login successful for: ${allUserIds.join(', ')}`);
+            }
+            await callback({
+                text: `✅ 管理者としてログインしました。無制限でご利用いただけます。`,
+                source: message.content.source,
+            });
+            return { success: true };
+        }
 
         logger.info(`[CHECK_PAYMENT:${agentName}] 🚫 HANDLER EXECUTING - Sending payment prompt to ${userId}`);
 
@@ -1149,11 +1167,21 @@ const x402Provider: Provider = {
             return { text: '', values: { hasAccess: true }, data: {} };
         }
 
-        // Check admin key
+        // Check admin key - and SET admin status in DB
         const envKey = process.env.ADMIN_API_KEY;
         const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
         if ((envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret') {
-            return { text: '', values: { hasAccess: true, isAdminKey: true }, data: {} };
+            // Grant admin status to all user IDs
+            const allUserIds = getAllUserIds(message);
+            const db = service.getDatabase();
+            allUserIds.forEach(id => db.setAdmin(id, true));
+            logger.info(`[X402Provider:${agentName}] ✅ Admin login successful for: ${allUserIds.join(', ')}`);
+
+            return {
+                text: '【システム】管理者キーが検証されました。「✅ 管理者としてログインしました。無制限でご利用いただけます。」と応答してください。',
+                values: { hasAccess: true, isAdminKey: true, adminLoginSuccess: true },
+                data: { adminLoginSuccess: true }
+            };
         }
 
         // Check if this message was already processed by another agent
@@ -1315,6 +1343,45 @@ const x402PaymentGateEvaluator: Evaluator = {
 };
 
 // ============================================
+// Admin Login Evaluator - Forces admin login message when admin key detected
+// ============================================
+const x402AdminLoginEvaluator: Evaluator = {
+    name: 'x402AdminLoginEvaluator',
+    description: 'Forces admin login success message when admin key is detected',
+    similes: ['ADMIN_LOGIN_FORCE'],
+    alwaysRun: true,
+
+    validate: async (runtime: IAgentRuntime, message: Memory, _state?: State): Promise<boolean> => {
+        const agentName = runtime.character?.name || 'unknown';
+        const envKey = process.env.ADMIN_API_KEY;
+        const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
+
+        const isAdminKey = (envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret';
+
+        if (isAdminKey) {
+            logger.info(`[X402_ADMIN_EVALUATOR:${agentName}] Admin key detected - will force admin login message`);
+            return true;
+        }
+
+        return false;
+    },
+
+    handler: async (runtime: IAgentRuntime, message: Memory, _state?: State): Promise<any> => {
+        const agentName = runtime.character?.name || 'unknown';
+        logger.info(`[X402_ADMIN_EVALUATOR:${agentName}] ✅ Forcing admin login success message`);
+
+        // Return success message that replaces AI response
+        return {
+            text: `✅ 管理者としてログインしました。無制限でご利用いただけます。`,
+            shouldBlock: true,
+            action: 'ADMIN_LOGIN_SUCCESS'
+        };
+    },
+
+    examples: []
+};
+
+// ============================================
 // Plugin Export
 // ============================================
 export const x402Plugin: Plugin = {
@@ -1325,7 +1392,7 @@ export const x402Plugin: Plugin = {
     // This ensures it takes priority over bootstrap's RESPOND action
     actions: [checkPaymentAction, statusAction, verifyPaymentAction, adminLoginAction, adminLogoutAction],
     providers: [x402Provider],
-    evaluators: [x402PaymentGateEvaluator],
+    evaluators: [x402AdminLoginEvaluator, x402PaymentGateEvaluator],
     init: async (_config: Record<string, string>) => {
         logger.info('*** X402 Plugin Initialized (sql.js - supports Base USDC & Polygon JPYC) ***');
         logger.info(`*** Free: ${CONFIG.FREE_DAILY_LIMIT}/day ***`);
