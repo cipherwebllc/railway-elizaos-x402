@@ -53514,10 +53514,12 @@ var twoCharacter = {
       shouldIgnoreDirectMessages: false,
       shouldRespondOnlyToMentions: false
     },
-    mcpServers: {
-      "appfav-gateway": {
-        type: "sse",
-        url: process.env.MCP_GATEWAY_URL
+    mcp: {
+      servers: {
+        "appfav-gateway": {
+          type: "sse",
+          url: process.env.MCP_GATEWAY_URL
+        }
       }
     }
   },
@@ -74399,8 +74401,9 @@ var checkPaymentAction = {
     const envKey = process.env.ADMIN_API_KEY;
     const cleanedText = (message.content.text || "").trim().replace(/^["']|["']$/g, "");
     if (envKey && cleanedText === envKey || cleanedText === "x402-admin-secret") {
-      logger18.info(`[CHECK_PAYMENT:${agentName}] Skipping - admin key`);
-      return false;
+      logger18.info(`[CHECK_PAYMENT:${agentName}] Admin key detected - triggering admin login`);
+      message._isAdminKey = true;
+      return true;
     }
     if (message.roomId && service.getDatabase().isAdmin(message.roomId)) {
       logger18.info(`[CHECK_PAYMENT:${agentName}] Skipping - room is admin`);
@@ -74421,6 +74424,20 @@ var checkPaymentAction = {
     const userId = extractUserId(message);
     const agentName = runtime2.character?.name || "unknown";
     const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || "https://x402payment.vercel.app";
+    if (message._isAdminKey) {
+      const service = runtime2.getService("x402");
+      if (service) {
+        const allUserIds = getAllUserIds(message);
+        const db = service.getDatabase();
+        allUserIds.forEach((id2) => db.setAdmin(id2, true));
+        logger18.info(`[CHECK_PAYMENT:${agentName}] ✅ Admin login successful for: ${allUserIds.join(", ")}`);
+      }
+      await callback({
+        text: `✅ 管理者としてログインしました。無制限でご利用いただけます。`,
+        source: message.content.source
+      });
+      return { success: true };
+    }
     logger18.info(`[CHECK_PAYMENT:${agentName}] \uD83D\uDEAB HANDLER EXECUTING - Sending payment prompt to ${userId}`);
     const usdcSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=single&amount=${CONFIG.SINGLE_PRICE_USDC}`;
     const usdcDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
@@ -74613,7 +74630,15 @@ var x402Provider = {
     const envKey = process.env.ADMIN_API_KEY;
     const cleanedText = (message.content.text || "").trim().replace(/^["']|["']$/g, "");
     if (envKey && cleanedText === envKey || cleanedText === "x402-admin-secret") {
-      return { text: "", values: { hasAccess: true, isAdminKey: true }, data: {} };
+      const allUserIds = getAllUserIds(message);
+      const db2 = service.getDatabase();
+      allUserIds.forEach((id2) => db2.setAdmin(id2, true));
+      logger18.info(`[X402Provider:${agentName}] ✅ Admin login successful for: ${allUserIds.join(", ")}`);
+      return {
+        text: "【システム】管理者キーが検証されました。「✅ 管理者としてログインしました。無制限でご利用いただけます。」と応答してください。",
+        values: { hasAccess: true, isAdminKey: true, adminLoginSuccess: true },
+        data: { adminLoginSuccess: true }
+      };
     }
     const existingProcess = processedMessages.get(messageKey);
     if (existingProcess) {
@@ -74738,13 +74763,40 @@ var x402PaymentGateEvaluator = {
   },
   examples: []
 };
+var x402AdminLoginEvaluator = {
+  name: "x402AdminLoginEvaluator",
+  description: "Forces admin login success message when admin key is detected",
+  similes: ["ADMIN_LOGIN_FORCE"],
+  alwaysRun: true,
+  validate: async (runtime2, message, _state) => {
+    const agentName = runtime2.character?.name || "unknown";
+    const envKey = process.env.ADMIN_API_KEY;
+    const cleanedText = (message.content.text || "").trim().replace(/^["']|["']$/g, "");
+    const isAdminKey = envKey && cleanedText === envKey || cleanedText === "x402-admin-secret";
+    if (isAdminKey) {
+      logger18.info(`[X402_ADMIN_EVALUATOR:${agentName}] Admin key detected - will force admin login message`);
+      return true;
+    }
+    return false;
+  },
+  handler: async (runtime2, message, _state) => {
+    const agentName = runtime2.character?.name || "unknown";
+    logger18.info(`[X402_ADMIN_EVALUATOR:${agentName}] ✅ Forcing admin login success message`);
+    return {
+      text: `✅ 管理者としてログインしました。無制限でご利用いただけます。`,
+      shouldBlock: true,
+      action: "ADMIN_LOGIN_SUCCESS"
+    };
+  },
+  examples: []
+};
 var x402Plugin = {
   name: "x402",
   description: "x402 Payment Gating with SQLite persistence (Free/Daily/Pro) - using sql.js (pure JS)",
   services: [X402Service],
   actions: [checkPaymentAction, statusAction, verifyPaymentAction, adminLoginAction, adminLogoutAction],
   providers: [x402Provider],
-  evaluators: [x402PaymentGateEvaluator],
+  evaluators: [x402AdminLoginEvaluator, x402PaymentGateEvaluator],
   init: async (_config) => {
     logger18.info("*** X402 Plugin Initialized (sql.js - supports Base USDC & Polygon JPYC) ***");
     logger18.info(`*** Free: ${CONFIG.FREE_DAILY_LIMIT}/day ***`);
@@ -74810,5 +74862,5 @@ export {
   character
 };
 
-//# debugId=8002520CCA68E72F64756E2164756E21
+//# debugId=539B7F088EA2BD2E64756E2164756E21
 //# sourceMappingURL=index.js.map
