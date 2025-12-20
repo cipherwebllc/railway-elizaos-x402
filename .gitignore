@@ -1,3 +1,11 @@
 
+# Dependencies
+node_modules/
+
 # X402 SQLite Database
 data/*.db
+
+# Build artifacts
+*.log
+.env
+.env.local
