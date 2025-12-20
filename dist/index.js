@@ -53145,6 +53145,13 @@ var character = {
   },
   system: `あなたは『DLIZA』。日本の暗号資産規制・税制データの「超高速検索・要約エンジン」です。
 
+## \uD83D\uDD11 特殊コマンド認識（重要）
+ユーザーがAPIキーやトークンのような文字列（英数字・ハイフン・アンダースコアの組み合わせ）を送信した場合：
+- それは管理者認証キーかもしれません
+- 絶対にIGNOREしないでください
+- ADMIN_LOGINアクションとして処理してください
+- 例: "abc123-xyz", "x402-admin-secret" など
+
 ## ⚠️ 免責事項（会話の最初の1回目だけ伝える）
 **重要**: この免責事項は、ユーザーとの会話セッションで**最初の1回目の返答時のみ**伝えてください。
 2回目以降の返答では免責事項を繰り返さないでください。ユーザーは既に理解しています。
@@ -53330,6 +53337,13 @@ var twoCharacter = {
   name: "Coo",
   system: `あなたは『Coo』。Web3資金ルート設計における「攻めの戦略家」です。
 あなたの役割は、ユーザーの資産と事業を最大化させるためのルートを描くことです。パートナーの『DLIZA』はリスクばかり言いますが、あなたの仕事はそのリスクを超えた先にあるリターンと機会を示すことです。
+
+## \uD83D\uDD11 特殊コマンド認識（重要）
+ユーザーがAPIキーやトークンのような文字列（英数字・ハイフン・アンダースコアの組み合わせ）を送信した場合：
+- それは管理者認証キーかもしれません
+- 絶対にIGNOREしないでください
+- ADMIN_LOGINアクションとして処理してください
+- 例: "abc123-xyz", "x402-admin-secret" など
 
 ## 基本姿勢
 - **機会費用（Opportunity Cost）の鬼**: 「やらないことによる損失」を徹底的に指摘します。
@@ -74571,11 +74585,13 @@ var adminLoginAction = {
 };
 var adminLogoutAction = {
   name: "ADMIN_LOGOUT",
-  similes: ["ADMIN_LOGOUT", "admin logout"],
+  similes: ["ADMIN_LOGOUT", "admin logout", "logout admin"],
   description: "Revokes admin access",
   validate: async (_runtime, message, _state) => {
     const text2 = (message.content.text || "").toLowerCase();
-    return text2.includes("admin logout") || text2.includes("adminログアウト");
+    const hasAdmin = text2.includes("admin") || text2.includes("管理者");
+    const hasLogout = text2.includes("logout") || text2.includes("ログアウト") || text2.includes("解除");
+    return hasAdmin && hasLogout;
   },
   handler: async (runtime2, message, _state, _options, callback, _responses) => {
     const service = runtime2.getService("x402");
@@ -74603,13 +74619,15 @@ var x402Provider = {
     const messageKey = getMessageKey(message);
     const agentName = runtime2.character?.name || "unknown";
     logger18.info(`[X402Provider:${agentName}] User: ${userId}, MessageKey: ${messageKey.substring(0, 30)}...`);
-    if (text2.includes("支払いました") || text2.includes("paid") || text2.includes("0x") || text2.includes("ステータス") || text2.includes("status") || text2.includes("admin logout") || text2.includes("adminログアウト")) {
+    const hasAdmin = text2.includes("admin") || text2.includes("管理者");
+    const hasLogout = text2.includes("logout") || text2.includes("ログアウト") || text2.includes("解除");
+    if (text2.includes("支払いました") || text2.includes("paid") || text2.includes("0x") || text2.includes("ステータス") || text2.includes("status") || hasAdmin && hasLogout) {
       return { text: "", values: { hasAccess: true }, data: {} };
     }
     const envKey = process.env.ADMIN_API_KEY;
     const cleanedText = (message.content.text || "").trim().replace(/^["']|["']$/g, "");
     if (envKey && cleanedText === envKey || cleanedText === "x402-admin-secret") {
-      return { text: "", values: { hasAccess: true }, data: {} };
+      return { text: "", values: { hasAccess: true, isAdminKey: true }, data: {} };
     }
     const existingProcess = processedMessages.get(messageKey);
     if (existingProcess) {
@@ -74687,7 +74705,9 @@ var x402PaymentGateEvaluator = {
       return false;
     }
     const text2 = (message.content.text || "").toLowerCase();
-    if (text2.includes("支払いました") || text2.includes("paid") || text2.includes("0x") || text2.includes("ステータス") || text2.includes("status") || text2.includes("admin logout") || text2.includes("adminログアウト")) {
+    const hasAdminWord = text2.includes("admin") || text2.includes("管理者");
+    const hasLogoutWord = text2.includes("logout") || text2.includes("ログアウト") || text2.includes("解除");
+    if (text2.includes("支払いました") || text2.includes("paid") || text2.includes("0x") || text2.includes("ステータス") || text2.includes("status") || hasAdminWord && hasLogoutWord) {
       return false;
     }
     const envKey = process.env.ADMIN_API_KEY;
@@ -74804,5 +74824,5 @@ export {
   character
 };
 
-//# debugId=FBCECC7E531AAF6D64756E2164756E21
+//# debugId=61F0B1A12FEF950464756E2164756E21
 //# sourceMappingURL=index.js.map

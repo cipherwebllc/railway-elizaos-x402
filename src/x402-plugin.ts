@@ -1086,12 +1086,15 @@ const adminLoginAction: Action = {
 // Admin Logout Action
 const adminLogoutAction: Action = {
     name: 'ADMIN_LOGOUT',
-    similes: ['ADMIN_LOGOUT', 'admin logout'],
+    similes: ['ADMIN_LOGOUT', 'admin logout', 'logout admin'],
     description: 'Revokes admin access',
 
     validate: async (_runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
         const text = (message.content.text || '').toLowerCase();
-        return text.includes('admin logout') || text.includes('adminログアウト');
+        // More flexible matching for logout commands
+        const hasAdmin = text.includes('admin') || text.includes('管理者');
+        const hasLogout = text.includes('logout') || text.includes('ログアウト') || text.includes('解除');
+        return hasAdmin && hasLogout;
     },
 
     handler: async (
@@ -1138,9 +1141,11 @@ const x402Provider: Provider = {
         logger.info(`[X402Provider:${agentName}] User: ${userId}, MessageKey: ${messageKey.substring(0, 30)}...`);
 
         // Skip payment check for special messages
+        const hasAdmin = text.includes('admin') || text.includes('管理者');
+        const hasLogout = text.includes('logout') || text.includes('ログアウト') || text.includes('解除');
         if (text.includes('支払いました') || text.includes('paid') || text.includes('0x') ||
             text.includes('ステータス') || text.includes('status') ||
-            text.includes('admin logout') || text.includes('adminログアウト')) {
+            (hasAdmin && hasLogout)) {
             return { text: '', values: { hasAccess: true }, data: {} };
         }
 
@@ -1148,7 +1153,7 @@ const x402Provider: Provider = {
         const envKey = process.env.ADMIN_API_KEY;
         const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
         if ((envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret') {
-            return { text: '', values: { hasAccess: true }, data: {} };
+            return { text: '', values: { hasAccess: true, isAdminKey: true }, data: {} };
         }
 
         // Check if this message was already processed by another agent
@@ -1247,9 +1252,11 @@ const x402PaymentGateEvaluator: Evaluator = {
         const text = (message.content.text || '').toLowerCase();
 
         // Skip for special messages
+        const hasAdminWord = text.includes('admin') || text.includes('管理者');
+        const hasLogoutWord = text.includes('logout') || text.includes('ログアウト') || text.includes('解除');
         if (text.includes('支払いました') || text.includes('paid') || text.includes('0x') ||
             text.includes('ステータス') || text.includes('status') ||
-            text.includes('admin logout') || text.includes('adminログアウト')) {
+            (hasAdminWord && hasLogoutWord)) {
             return false;
         }
 
