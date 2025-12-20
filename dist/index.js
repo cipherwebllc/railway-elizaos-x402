@@ -29994,7 +29994,7 @@ var require_cross_spawn = __commonJS((exports, module) => {
   module.exports._enoent = enoent;
 });
 
-// node_modules/ws/lib/stream.js
+// node_modules/ethers/node_modules/ws/lib/stream.js
 var require_stream = __commonJS((exports, module) => {
   var { Duplex } = __require("stream");
   function emitClose(stream) {
@@ -30096,7 +30096,7 @@ var require_stream = __commonJS((exports, module) => {
   module.exports = createWebSocketStream;
 });
 
-// node_modules/ws/lib/constants.js
+// node_modules/ethers/node_modules/ws/lib/constants.js
 var require_constants6 = __commonJS((exports, module) => {
   module.exports = {
     BINARY_TYPES: ["nodebuffer", "arraybuffer", "fragments"],
@@ -30335,7 +30335,7 @@ var require_bufferutil = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/ws/lib/buffer-util.js
+// node_modules/ethers/node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS((exports, module) => {
   var { EMPTY_BUFFER } = require_constants6();
   var FastBuffer = Buffer[Symbol.species];
@@ -30413,7 +30413,7 @@ var require_buffer_util = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/ws/lib/limiter.js
+// node_modules/ethers/node_modules/ws/lib/limiter.js
 var require_limiter = __commonJS((exports, module) => {
   var kDone = Symbol("kDone");
   var kRun = Symbol("kRun");
@@ -30445,7 +30445,7 @@ var require_limiter = __commonJS((exports, module) => {
   module.exports = Limiter;
 });
 
-// node_modules/ws/lib/permessage-deflate.js
+// node_modules/ethers/node_modules/ws/lib/permessage-deflate.js
 var require_permessage_deflate2 = __commonJS((exports, module) => {
   var zlib = __require("zlib");
   var bufferUtil = require_buffer_util();
@@ -30747,7 +30747,7 @@ var require_utf_8_validate = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/ws/lib/validation.js
+// node_modules/ethers/node_modules/ws/lib/validation.js
 var require_validation2 = __commonJS((exports, module) => {
   var { isUtf8 } = __require("buffer");
   var tokenChars = [
@@ -30929,7 +30929,7 @@ var require_validation2 = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/ws/lib/receiver.js
+// node_modules/ethers/node_modules/ws/lib/receiver.js
 var require_receiver2 = __commonJS((exports, module) => {
   var { Writable } = __require("stream");
   var PerMessageDeflate = require_permessage_deflate2();
@@ -31308,7 +31308,7 @@ var require_receiver2 = __commonJS((exports, module) => {
   module.exports = Receiver;
 });
 
-// node_modules/ws/lib/sender.js
+// node_modules/ethers/node_modules/ws/lib/sender.js
 var require_sender2 = __commonJS((exports, module) => {
   var { Duplex } = __require("stream");
   var { randomFillSync } = __require("crypto");
@@ -31614,7 +31614,7 @@ var require_sender2 = __commonJS((exports, module) => {
   module.exports = Sender;
 });
 
-// node_modules/ws/lib/event-target.js
+// node_modules/ethers/node_modules/ws/lib/event-target.js
 var require_event_target = __commonJS((exports, module) => {
   var { kForOnEventAttribute, kListener } = require_constants6();
   var kCode = Symbol("kCode");
@@ -31765,7 +31765,7 @@ var require_event_target = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/ws/lib/extension.js
+// node_modules/ethers/node_modules/ws/lib/extension.js
 var require_extension = __commonJS((exports, module) => {
   var { tokenChars } = require_validation2();
   function push(dest, name18, elem) {
@@ -31930,7 +31930,7 @@ var require_extension = __commonJS((exports, module) => {
   module.exports = { format, parse };
 });
 
-// node_modules/ws/lib/websocket.js
+// node_modules/ethers/node_modules/ws/lib/websocket.js
 var require_websocket2 = __commonJS((exports, module) => {
   var EventEmitter = __require("events");
   var https2 = __require("https");
@@ -32663,7 +32663,7 @@ var require_websocket2 = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/ws/lib/subprotocol.js
+// node_modules/ethers/node_modules/ws/lib/subprotocol.js
 var require_subprotocol = __commonJS((exports, module) => {
   var { tokenChars } = require_validation2();
   function parse(header) {
@@ -32708,7 +32708,7 @@ var require_subprotocol = __commonJS((exports, module) => {
   module.exports = { parse };
 });
 
-// node_modules/ws/lib/websocket-server.js
+// node_modules/ethers/node_modules/ws/lib/websocket-server.js
 var require_websocket_server = __commonJS((exports, module) => {
   var EventEmitter = __require("events");
   var http2 = __require("http");
@@ -38116,7 +38116,7 @@ async function getVercelRequestId() {
   var _a82;
   return (_a82 = import_oidc.getContext().headers) == null ? undefined : _a82["x-vercel-id"];
 }
-var VERSION2 = "2.0.21";
+var VERSION2 = "2.0.23";
 var AI_GATEWAY_PROTOCOL_VERSION = "0.0.1";
 function createGatewayProvider(options = {}) {
   var _a82, _b8;
@@ -38652,7 +38652,7 @@ function detectMediaType({
   }
   return;
 }
-var VERSION3 = "5.0.114";
+var VERSION3 = "5.0.116";
 var download = async ({ url }) => {
   var _a16;
   const urlText = url.toString();
@@ -70491,7 +70491,7 @@ class EtherscanProvider extends AbstractProvider {
   }
 }
 
-// node_modules/ws/wrapper.mjs
+// node_modules/ethers/node_modules/ws/wrapper.mjs
 var import_stream2 = __toESM(require_stream(), 1);
 var import_receiver = __toESM(require_receiver2(), 1);
 var import_sender = __toESM(require_sender2(), 1);
@@ -74862,5 +74862,5 @@ export {
   character
 };
 
-//# debugId=539B7F088EA2BD2E64756E2164756E21
+//# debugId=E8D455B0F88E252E64756E2164756E21
 //# sourceMappingURL=index.js.map
