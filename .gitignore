@@ -6,6 +6,7 @@ node_modules/
 data/*.db
 
 # Build artifacts
+dist/
 *.log
 .env
 .env.local
