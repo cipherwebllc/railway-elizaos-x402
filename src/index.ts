@@ -26,6 +26,7 @@ import { alizaCharacter } from "./aliza-character.ts";
 import plugin from "./plugin.ts"; // starter plugin
 import { x402Plugin } from "./x402-plugin.ts";
 import { erc8004Plugin } from "./plugins/erc8004/index.ts";
+import { agentCommPlugin } from "./agent-comm-plugin.ts";
 
 // 1体目
 const baseAgent: ProjectAgent = {
@@ -42,6 +43,7 @@ const baseAgent: ProjectAgent = {
     deFiYieldPlugin,
     exchangeMonitorPlugin,
     x402Plugin,
+    agentCommPlugin,  // Agent-to-agent communication with Eliza Cloud
     // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
@@ -66,6 +68,7 @@ const twoAgent: ProjectAgent = {
     deFiYieldPlugin,
     exchangeMonitorPlugin,
     x402Plugin,
+    agentCommPlugin,  // Agent-to-agent communication with Eliza Cloud
     // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
@@ -85,6 +88,7 @@ const alizaAgent: ProjectAgent = {
     mcpPlugin,  // MCP (appfav-gateway) を使用
     // x402Pluginは含めない（課金なし）
     newsPlugin,
+    agentCommPlugin,  // Agent-to-agent communication with Eliza Cloud
     // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
