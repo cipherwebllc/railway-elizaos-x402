@@ -11,12 +11,16 @@ import {
 } from '@elizaos/core';
 
 // ============================================
-// Configuration
+// Configuration (using getters to read env vars at runtime)
 // ============================================
 const CONFIG = {
-    // Eliza Cloud Coo API endpoint (set via environment variable)
-    ELIZA_CLOUD_API_URL: process.env.ELIZA_CLOUD_API_URL || 'https://eliza-cloud.example.com',
-    ELIZA_CLOUD_AGENT_ID: process.env.ELIZA_CLOUD_AGENT_ID || 'coo-cloud',
+    // Getters to read env vars at runtime (not module load time)
+    get ELIZA_CLOUD_API_URL(): string {
+        return process.env.ELIZA_CLOUD_API_URL || '';
+    },
+    get ELIZA_CLOUD_AGENT_ID(): string {
+        return process.env.ELIZA_CLOUD_AGENT_ID || 'coo-cloud';
+    },
     // Timeout for API calls (30 seconds)
     API_TIMEOUT: 30000,
     // Protocol identifier for agent communication
@@ -112,22 +116,52 @@ async function sendToElizaCloud(
 
 /**
  * Check if a message is a request for Eliza Cloud communication
+ * Uses stricter matching to avoid false positives
  */
 function isElizaCloudRequest(text: string): boolean {
     const lowerText = text.toLowerCase();
-    return (
+
+    // Direct mentions of Eliza Cloud (high confidence)
+    const directMention =
         lowerText.includes('eliza cloud') ||
         lowerText.includes('elizacloud') ||
         lowerText.includes('cloud coo') ||
         lowerText.includes('クラウドcoo') ||
+        lowerText.includes('クラウド coo') ||
+        lowerText.includes('eliza クラウド');
+
+    if (directMention) {
+        return true;
+    }
+
+    // Check for data request keywords combined with cloud/remote context
+    // Avoid triggering on general questions about gas or market
+    const hasCloudContext =
+        lowerText.includes('cloud') ||
+        lowerText.includes('クラウド') ||
+        lowerText.includes('remote') ||
+        lowerText.includes('リモート') ||
+        lowerText.includes('外部') ||
+        lowerText.includes('連携');
+
+    const hasDataRequest =
         lowerText.includes('market data') ||
         lowerText.includes('マーケットデータ') ||
         lowerText.includes('市場データ') ||
         lowerText.includes('ガス代') ||
         lowerText.includes('gas fee') ||
         lowerText.includes('real-time') ||
-        lowerText.includes('リアルタイム')
-    );
+        lowerText.includes('リアルタイム');
+
+    // Only trigger if both cloud context and data request are present
+    // OR if explicitly asking to "get from" / "fetch from" cloud
+    const hasFetchIntent =
+        (lowerText.includes('から') && hasDataRequest) ||
+        (lowerText.includes('from') && hasDataRequest) ||
+        lowerText.includes('取得して') ||
+        lowerText.includes('確認して');
+
+    return (hasCloudContext && hasDataRequest) || (hasFetchIntent && hasCloudContext);
 }
 
 // ============================================
@@ -197,7 +231,7 @@ Use this when users ask about:
         };
 
         // Check if Eliza Cloud URL is configured
-        if (!process.env.ELIZA_CLOUD_API_URL) {
+        if (!CONFIG.ELIZA_CLOUD_API_URL) {
             logger.warn(`[QUERY_ELIZA_CLOUD:${agentName}] ELIZA_CLOUD_API_URL not configured`);
             await callback({
                 text: `📡 Eliza Cloud Cooへのクエリを準備しています...\n\n⚠️ 現在、Eliza Cloud APIが設定されていません。管理者にELIZA_CLOUD_API_URL環境変数の設定を依頼してください。\n\nお問い合わせ内容: "${userText.substring(0, 100)}..."`,
@@ -329,7 +363,7 @@ Only available for Dliza (Commander). Use for:
         };
 
         // Check if Eliza Cloud URL is configured
-        if (!process.env.ELIZA_CLOUD_API_URL) {
+        if (!CONFIG.ELIZA_CLOUD_API_URL) {
             await callback({
                 text: `📋 **オペレーション指示を準備中**\n\n⚠️ Eliza Cloud APIが設定されていません。\n\n指示内容: "${userText.substring(0, 100)}..."\n\nEliza Cloud Cooへの接続後、この指示を実行します。`,
                 source: message.content.source,
@@ -392,7 +426,7 @@ const agentCommProvider: Provider = {
             logger.info(`[AGENT_COMM_PROVIDER:${agentName}] Eliza Cloud request detected`);
 
             // Provide context about agent communication capabilities
-            const cloudStatus = process.env.ELIZA_CLOUD_API_URL
+            const cloudStatus = CONFIG.ELIZA_CLOUD_API_URL
                 ? '接続可能'
                 : '未設定（ELIZA_CLOUD_API_URL環境変数が必要）';
 
@@ -424,10 +458,10 @@ export const agentCommPlugin: Plugin = {
     init: async (_config: Record<string, string>) => {
         logger.info('*** Agent Communication Plugin Initialized ***');
         logger.info(`*** Protocol: ${CONFIG.PROTOCOL} ***`);
-        logger.info(`*** Eliza Cloud URL: ${CONFIG.ELIZA_CLOUD_API_URL} ***`);
+        logger.info(`*** Eliza Cloud URL: ${CONFIG.ELIZA_CLOUD_API_URL || '(not set)'} ***`);
         logger.info(`*** Eliza Cloud Agent ID: ${CONFIG.ELIZA_CLOUD_AGENT_ID} ***`);
 
-        if (!process.env.ELIZA_CLOUD_API_URL) {
+        if (!CONFIG.ELIZA_CLOUD_API_URL) {
             logger.warn('*** ELIZA_CLOUD_API_URL not set - Agent communication will be simulated ***');
         }
     },
