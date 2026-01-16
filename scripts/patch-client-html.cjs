@@ -219,4 +219,46 @@ if (discordPatched) {
     console.log('ℹ️ Discord plugin not found or already patched.');
 }
 
+// ============================================
+// 5. Patch Server API to include settings in agent list
+// ============================================
+console.log('🖼️ Patching server to include settings in agent list API...');
+
+const serverIndexPath = path.join(__dirname, '../node_modules/@elizaos/server/dist/index.js');
+
+if (fs.existsSync(serverIndexPath)) {
+    try {
+        let serverContent = fs.readFileSync(serverIndexPath, 'utf8');
+
+        // Find the agent list mapping that doesn't include settings
+        // Original: id: agent.id, name: agent.name || "", characterName: agent.name || "", bio: agent.bio?.[0] ?? "", status:
+        // We need to add settings: agent.settings to include avatar
+
+        const originalPattern = /const response = allAgents\.map\(\(agent\) => \(\{\s*id: agent\.id,\s*name: agent\.name \|\| "",\s*characterName: agent\.name \|\| "",\s*bio: agent\.bio\?\.\[0\] \?\? "",\s*status:/;
+
+        if (serverContent.match(originalPattern) && !serverContent.includes('settings: agent.settings')) {
+            serverContent = serverContent.replace(
+                originalPattern,
+                `const response = allAgents.map((agent) => ({
+        id: agent.id,
+        name: agent.name || "",
+        characterName: agent.name || "",
+        bio: agent.bio?.[0] ?? "",
+        settings: agent.settings,
+        status:`
+            );
+            fs.writeFileSync(serverIndexPath, serverContent);
+            console.log(`✅ Patched server to include settings in agent list API`);
+        } else if (serverContent.includes('settings: agent.settings')) {
+            console.log('ℹ️ Server already patched to include settings.');
+        } else {
+            console.warn('⚠️ Could not find agent list mapping pattern in server.');
+        }
+    } catch (error) {
+        console.warn(`⚠️ Could not patch server: ${error.message}`);
+    }
+} else {
+    console.warn('⚠️ Server index.js not found.');
+}
+
 console.log('🎉 All patches complete!');
