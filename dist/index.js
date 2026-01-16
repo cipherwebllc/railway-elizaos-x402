@@ -26166,13 +26166,13 @@ var require_core = __commonJS((exports) => {
     return metaOpts;
   }
   var noLogs = { log() {}, warn() {}, error() {} };
-  function getLogger(logger8) {
-    if (logger8 === false)
+  function getLogger(logger9) {
+    if (logger9 === false)
       return noLogs;
-    if (logger8 === undefined)
+    if (logger9 === undefined)
       return console;
-    if (logger8.log && logger8.warn && logger8.error)
-      return logger8;
+    if (logger9.log && logger9.warn && logger9.error)
+      return logger9;
     throw new Error("logger must implement log, warn and error methods");
   }
   var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -29660,7 +29660,7 @@ var require_isexe = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/which/which.js
+// node_modules/cross-spawn/node_modules/which/which.js
 var require_which = __commonJS((exports, module) => {
   var isWindows = process.platform === "win32" || process.env.OSTYPE === "cygwin" || process.env.OSTYPE === "msys";
   var path = __require("path");
@@ -35293,12 +35293,13 @@ var require_sql_wasm = __commonJS((exports, module) => {
 
 // src/index.ts
 import {
-  logger as logger19
+  logger as logger20
 } from "@elizaos/core";
 
 // node_modules/@elizaos/plugin-openrouter/dist/node/index.node.js
 import {
-  ModelType as ModelType4
+  ModelType as ModelType4,
+  logger as logger8
 } from "@elizaos/core";
 import { logger } from "@elizaos/core";
 
@@ -35416,7 +35417,7 @@ var $upgrade = makeDispatcher(api.upgrade);
 var { EventSource } = require_eventsource();
 
 // node_modules/@elizaos/plugin-openrouter/dist/node/index.node.js
-import { logger as logger3, ModelType } from "@elizaos/core";
+import { logger as logger2, ModelType } from "@elizaos/core";
 
 // node_modules/@ai-sdk/provider/dist/index.mjs
 var marker = "vercel.ai.error";
@@ -35808,6 +35809,51 @@ async function delay(delayInMs, options) {
 function createAbortError() {
   return new DOMException("Delay was aborted", "AbortError");
 }
+var DelayedPromise = class {
+  constructor() {
+    this.status = { type: "pending" };
+    this._resolve = undefined;
+    this._reject = undefined;
+  }
+  get promise() {
+    if (this._promise) {
+      return this._promise;
+    }
+    this._promise = new Promise((resolve2, reject) => {
+      if (this.status.type === "resolved") {
+        resolve2(this.status.value);
+      } else if (this.status.type === "rejected") {
+        reject(this.status.error);
+      }
+      this._resolve = resolve2;
+      this._reject = reject;
+    });
+    return this._promise;
+  }
+  resolve(value) {
+    var _a15;
+    this.status = { type: "resolved", value };
+    if (this._promise) {
+      (_a15 = this._resolve) == null || _a15.call(this, value);
+    }
+  }
+  reject(error) {
+    var _a15;
+    this.status = { type: "rejected", error };
+    if (this._promise) {
+      (_a15 = this._reject) == null || _a15.call(this, error);
+    }
+  }
+  isResolved() {
+    return this.status.type === "resolved";
+  }
+  isRejected() {
+    return this.status.type === "rejected";
+  }
+  isPending() {
+    return this.status.type === "pending";
+  }
+};
 function extractResponseHeaders(response) {
   return Object.fromEntries([...response.headers]);
 }
@@ -38413,6 +38459,18 @@ var name72 = "AI_NoOutputGeneratedError";
 var marker73 = `vercel.ai.error.${name72}`;
 var symbol73 = Symbol.for(marker73);
 var _a73;
+var NoOutputGeneratedError = class extends AISDKError {
+  constructor({
+    message = "No output generated.",
+    cause
+  } = {}) {
+    super({ name: name72, message, cause });
+    this[_a73] = true;
+  }
+  static isInstance(error) {
+    return AISDKError.hasMarker(error, marker73);
+  }
+};
 _a73 = symbol73;
 var name82 = "AI_NoSuchToolError";
 var marker82 = `vercel.ai.error.${name82}`;
@@ -39606,6 +39664,12 @@ var DefaultGeneratedFile = class {
     return this.uint8ArrayData;
   }
 };
+var DefaultGeneratedFileWithType = class extends DefaultGeneratedFile {
+  constructor(options) {
+    super(options);
+    this.type = "file";
+  }
+};
 async function parseToolCall({
   toolCall,
   tools,
@@ -40397,6 +40461,72 @@ function prepareHeaders(headers, defaultHeaders) {
   }
   return responseHeaders;
 }
+function createTextStreamResponse({
+  status,
+  statusText,
+  headers,
+  textStream
+}) {
+  return new Response(textStream.pipeThrough(new TextEncoderStream), {
+    status: status != null ? status : 200,
+    statusText,
+    headers: prepareHeaders(headers, {
+      "content-type": "text/plain; charset=utf-8"
+    })
+  });
+}
+function writeToServerResponse({
+  response,
+  status,
+  statusText,
+  headers,
+  stream
+}) {
+  const statusCode = status != null ? status : 200;
+  if (statusText !== undefined) {
+    response.writeHead(statusCode, statusText, headers);
+  } else {
+    response.writeHead(statusCode, headers);
+  }
+  const reader = stream.getReader();
+  const read = async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done)
+          break;
+        const canContinue = response.write(value);
+        if (!canContinue) {
+          await new Promise((resolve2) => {
+            response.once("drain", resolve2);
+          });
+        }
+      }
+    } catch (error) {
+      throw error;
+    } finally {
+      response.end();
+    }
+  };
+  read();
+}
+function pipeTextStreamToResponse({
+  response,
+  status,
+  statusText,
+  headers,
+  textStream
+}) {
+  writeToServerResponse({
+    response,
+    status,
+    statusText,
+    headers: Object.fromEntries(prepareHeaders(headers, {
+      "content-type": "text/plain; charset=utf-8"
+    }).entries()),
+    stream: textStream.pipeThrough(new TextEncoderStream)
+  });
+}
 var JsonToSseTransformStream = class extends TransformStream {
   constructor() {
     super({
@@ -40413,6 +40543,42 @@ var JsonToSseTransformStream = class extends TransformStream {
     });
   }
 };
+var UI_MESSAGE_STREAM_HEADERS = {
+  "content-type": "text/event-stream",
+  "cache-control": "no-cache",
+  connection: "keep-alive",
+  "x-vercel-ai-ui-message-stream": "v1",
+  "x-accel-buffering": "no"
+};
+function createUIMessageStreamResponse({
+  status,
+  statusText,
+  headers,
+  stream,
+  consumeSseStream
+}) {
+  let sseStream = stream.pipeThrough(new JsonToSseTransformStream);
+  if (consumeSseStream) {
+    const [stream1, stream2] = sseStream.tee();
+    sseStream = stream1;
+    consumeSseStream({ stream: stream2 });
+  }
+  return new Response(sseStream.pipeThrough(new TextEncoderStream), {
+    status,
+    statusText,
+    headers: prepareHeaders(headers, UI_MESSAGE_STREAM_HEADERS)
+  });
+}
+function getResponseUIMessageId({
+  originalMessages,
+  responseMessageId
+}) {
+  if (originalMessages == null) {
+    return;
+  }
+  const lastMessage = originalMessages[originalMessages.length - 1];
+  return (lastMessage == null ? undefined : lastMessage.role) === "assistant" ? lastMessage.id : typeof responseMessageId === "function" ? responseMessageId() : responseMessageId;
+}
 var uiMessageChunkSchema = lazyValidator(() => zodSchema(z72.union([
   z72.strictObject({
     type: z72.literal("text-start"),
@@ -40555,6 +40721,37 @@ var uiMessageChunkSchema = lazyValidator(() => zodSchema(z72.union([
     messageMetadata: z72.unknown()
   })
 ])));
+function isDataUIMessageChunk(chunk) {
+  return chunk.type.startsWith("data-");
+}
+function mergeObjects(base, overrides) {
+  if (base === undefined && overrides === undefined) {
+    return;
+  }
+  if (base === undefined) {
+    return overrides;
+  }
+  if (overrides === undefined) {
+    return base;
+  }
+  const result = { ...base };
+  for (const key in overrides) {
+    if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+      const overridesValue = overrides[key];
+      if (overridesValue === undefined)
+        continue;
+      const baseValue = key in base ? base[key] : undefined;
+      const isSourceObject = overridesValue !== null && typeof overridesValue === "object" && !Array.isArray(overridesValue) && !(overridesValue instanceof Date) && !(overridesValue instanceof RegExp);
+      const isTargetObject = baseValue !== null && baseValue !== undefined && typeof baseValue === "object" && !Array.isArray(baseValue) && !(baseValue instanceof Date) && !(baseValue instanceof RegExp);
+      if (isSourceObject && isTargetObject) {
+        result[key] = mergeObjects(baseValue, overridesValue);
+      } else {
+        result[key] = overridesValue;
+      }
+    }
+  }
+  return result;
+}
 function fixJson(input) {
   const stack = ["ROOT"];
   let lastValidIndex = -1;
@@ -40885,6 +41082,538 @@ async function parsePartialJson(jsonText) {
   }
   return { value: undefined, state: "failed-parse" };
 }
+function isToolUIPart(part) {
+  return part.type.startsWith("tool-");
+}
+function getToolName(part) {
+  return part.type.split("-").slice(1).join("-");
+}
+function createStreamingUIMessageState({
+  lastMessage,
+  messageId
+}) {
+  return {
+    message: (lastMessage == null ? undefined : lastMessage.role) === "assistant" ? lastMessage : {
+      id: messageId,
+      metadata: undefined,
+      role: "assistant",
+      parts: []
+    },
+    activeTextParts: {},
+    activeReasoningParts: {},
+    partialToolCalls: {}
+  };
+}
+function processUIMessageStream({
+  stream,
+  messageMetadataSchema,
+  dataPartSchemas,
+  runUpdateMessageJob,
+  onError,
+  onToolCall,
+  onData
+}) {
+  return stream.pipeThrough(new TransformStream({
+    async transform(chunk, controller) {
+      await runUpdateMessageJob(async ({ state, write }) => {
+        var _a16, _b8, _c, _d;
+        function getToolInvocation(toolCallId) {
+          const toolInvocations = state.message.parts.filter(isToolUIPart);
+          const toolInvocation = toolInvocations.find((invocation) => invocation.toolCallId === toolCallId);
+          if (toolInvocation == null) {
+            throw new Error("tool-output-error must be preceded by a tool-input-available");
+          }
+          return toolInvocation;
+        }
+        function getDynamicToolInvocation(toolCallId) {
+          const toolInvocations = state.message.parts.filter((part) => part.type === "dynamic-tool");
+          const toolInvocation = toolInvocations.find((invocation) => invocation.toolCallId === toolCallId);
+          if (toolInvocation == null) {
+            throw new Error("tool-output-error must be preceded by a tool-input-available");
+          }
+          return toolInvocation;
+        }
+        function updateToolPart(options) {
+          var _a172;
+          const part = state.message.parts.find((part2) => isToolUIPart(part2) && part2.toolCallId === options.toolCallId);
+          const anyOptions = options;
+          const anyPart = part;
+          if (part != null) {
+            part.state = options.state;
+            anyPart.input = anyOptions.input;
+            anyPart.output = anyOptions.output;
+            anyPart.errorText = anyOptions.errorText;
+            anyPart.rawInput = anyOptions.rawInput;
+            anyPart.preliminary = anyOptions.preliminary;
+            anyPart.providerExecuted = (_a172 = anyOptions.providerExecuted) != null ? _a172 : part.providerExecuted;
+            if (anyOptions.providerMetadata != null && part.state === "input-available") {
+              part.callProviderMetadata = anyOptions.providerMetadata;
+            }
+          } else {
+            state.message.parts.push({
+              type: `tool-${options.toolName}`,
+              toolCallId: options.toolCallId,
+              state: options.state,
+              input: anyOptions.input,
+              output: anyOptions.output,
+              rawInput: anyOptions.rawInput,
+              errorText: anyOptions.errorText,
+              providerExecuted: anyOptions.providerExecuted,
+              preliminary: anyOptions.preliminary,
+              ...anyOptions.providerMetadata != null ? { callProviderMetadata: anyOptions.providerMetadata } : {}
+            });
+          }
+        }
+        function updateDynamicToolPart(options) {
+          var _a172, _b22;
+          const part = state.message.parts.find((part2) => part2.type === "dynamic-tool" && part2.toolCallId === options.toolCallId);
+          const anyOptions = options;
+          const anyPart = part;
+          if (part != null) {
+            part.state = options.state;
+            anyPart.toolName = options.toolName;
+            anyPart.input = anyOptions.input;
+            anyPart.output = anyOptions.output;
+            anyPart.errorText = anyOptions.errorText;
+            anyPart.rawInput = (_a172 = anyOptions.rawInput) != null ? _a172 : anyPart.rawInput;
+            anyPart.preliminary = anyOptions.preliminary;
+            anyPart.providerExecuted = (_b22 = anyOptions.providerExecuted) != null ? _b22 : part.providerExecuted;
+            if (anyOptions.providerMetadata != null && part.state === "input-available") {
+              part.callProviderMetadata = anyOptions.providerMetadata;
+            }
+          } else {
+            state.message.parts.push({
+              type: "dynamic-tool",
+              toolName: options.toolName,
+              toolCallId: options.toolCallId,
+              state: options.state,
+              input: anyOptions.input,
+              output: anyOptions.output,
+              errorText: anyOptions.errorText,
+              preliminary: anyOptions.preliminary,
+              providerExecuted: anyOptions.providerExecuted,
+              ...anyOptions.providerMetadata != null ? { callProviderMetadata: anyOptions.providerMetadata } : {}
+            });
+          }
+        }
+        async function updateMessageMetadata(metadata) {
+          if (metadata != null) {
+            const mergedMetadata = state.message.metadata != null ? mergeObjects(state.message.metadata, metadata) : metadata;
+            if (messageMetadataSchema != null) {
+              await validateTypes({
+                value: mergedMetadata,
+                schema: messageMetadataSchema
+              });
+            }
+            state.message.metadata = mergedMetadata;
+          }
+        }
+        switch (chunk.type) {
+          case "text-start": {
+            const textPart = {
+              type: "text",
+              text: "",
+              providerMetadata: chunk.providerMetadata,
+              state: "streaming"
+            };
+            state.activeTextParts[chunk.id] = textPart;
+            state.message.parts.push(textPart);
+            write();
+            break;
+          }
+          case "text-delta": {
+            const textPart = state.activeTextParts[chunk.id];
+            textPart.text += chunk.delta;
+            textPart.providerMetadata = (_a16 = chunk.providerMetadata) != null ? _a16 : textPart.providerMetadata;
+            write();
+            break;
+          }
+          case "text-end": {
+            const textPart = state.activeTextParts[chunk.id];
+            textPart.state = "done";
+            textPart.providerMetadata = (_b8 = chunk.providerMetadata) != null ? _b8 : textPart.providerMetadata;
+            delete state.activeTextParts[chunk.id];
+            write();
+            break;
+          }
+          case "reasoning-start": {
+            const reasoningPart = {
+              type: "reasoning",
+              text: "",
+              providerMetadata: chunk.providerMetadata,
+              state: "streaming"
+            };
+            state.activeReasoningParts[chunk.id] = reasoningPart;
+            state.message.parts.push(reasoningPart);
+            write();
+            break;
+          }
+          case "reasoning-delta": {
+            const reasoningPart = state.activeReasoningParts[chunk.id];
+            reasoningPart.text += chunk.delta;
+            reasoningPart.providerMetadata = (_c = chunk.providerMetadata) != null ? _c : reasoningPart.providerMetadata;
+            write();
+            break;
+          }
+          case "reasoning-end": {
+            const reasoningPart = state.activeReasoningParts[chunk.id];
+            reasoningPart.providerMetadata = (_d = chunk.providerMetadata) != null ? _d : reasoningPart.providerMetadata;
+            reasoningPart.state = "done";
+            delete state.activeReasoningParts[chunk.id];
+            write();
+            break;
+          }
+          case "file": {
+            state.message.parts.push({
+              type: "file",
+              mediaType: chunk.mediaType,
+              url: chunk.url
+            });
+            write();
+            break;
+          }
+          case "source-url": {
+            state.message.parts.push({
+              type: "source-url",
+              sourceId: chunk.sourceId,
+              url: chunk.url,
+              title: chunk.title,
+              providerMetadata: chunk.providerMetadata
+            });
+            write();
+            break;
+          }
+          case "source-document": {
+            state.message.parts.push({
+              type: "source-document",
+              sourceId: chunk.sourceId,
+              mediaType: chunk.mediaType,
+              title: chunk.title,
+              filename: chunk.filename,
+              providerMetadata: chunk.providerMetadata
+            });
+            write();
+            break;
+          }
+          case "tool-input-start": {
+            const toolInvocations = state.message.parts.filter(isToolUIPart);
+            state.partialToolCalls[chunk.toolCallId] = {
+              text: "",
+              toolName: chunk.toolName,
+              index: toolInvocations.length,
+              dynamic: chunk.dynamic
+            };
+            if (chunk.dynamic) {
+              updateDynamicToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: chunk.toolName,
+                state: "input-streaming",
+                input: undefined,
+                providerExecuted: chunk.providerExecuted
+              });
+            } else {
+              updateToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: chunk.toolName,
+                state: "input-streaming",
+                input: undefined,
+                providerExecuted: chunk.providerExecuted
+              });
+            }
+            write();
+            break;
+          }
+          case "tool-input-delta": {
+            const partialToolCall = state.partialToolCalls[chunk.toolCallId];
+            partialToolCall.text += chunk.inputTextDelta;
+            const { value: partialArgs } = await parsePartialJson(partialToolCall.text);
+            if (partialToolCall.dynamic) {
+              updateDynamicToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: partialToolCall.toolName,
+                state: "input-streaming",
+                input: partialArgs
+              });
+            } else {
+              updateToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: partialToolCall.toolName,
+                state: "input-streaming",
+                input: partialArgs
+              });
+            }
+            write();
+            break;
+          }
+          case "tool-input-available": {
+            if (chunk.dynamic) {
+              updateDynamicToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: chunk.toolName,
+                state: "input-available",
+                input: chunk.input,
+                providerExecuted: chunk.providerExecuted,
+                providerMetadata: chunk.providerMetadata
+              });
+            } else {
+              updateToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: chunk.toolName,
+                state: "input-available",
+                input: chunk.input,
+                providerExecuted: chunk.providerExecuted,
+                providerMetadata: chunk.providerMetadata
+              });
+            }
+            write();
+            if (onToolCall && !chunk.providerExecuted) {
+              await onToolCall({
+                toolCall: chunk
+              });
+            }
+            break;
+          }
+          case "tool-input-error": {
+            if (chunk.dynamic) {
+              updateDynamicToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: chunk.toolName,
+                state: "output-error",
+                input: chunk.input,
+                errorText: chunk.errorText,
+                providerExecuted: chunk.providerExecuted,
+                providerMetadata: chunk.providerMetadata
+              });
+            } else {
+              updateToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: chunk.toolName,
+                state: "output-error",
+                input: undefined,
+                rawInput: chunk.input,
+                errorText: chunk.errorText,
+                providerExecuted: chunk.providerExecuted,
+                providerMetadata: chunk.providerMetadata
+              });
+            }
+            write();
+            break;
+          }
+          case "tool-output-available": {
+            if (chunk.dynamic) {
+              const toolInvocation = getDynamicToolInvocation(chunk.toolCallId);
+              updateDynamicToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: toolInvocation.toolName,
+                state: "output-available",
+                input: toolInvocation.input,
+                output: chunk.output,
+                preliminary: chunk.preliminary
+              });
+            } else {
+              const toolInvocation = getToolInvocation(chunk.toolCallId);
+              updateToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: getToolName(toolInvocation),
+                state: "output-available",
+                input: toolInvocation.input,
+                output: chunk.output,
+                providerExecuted: chunk.providerExecuted,
+                preliminary: chunk.preliminary
+              });
+            }
+            write();
+            break;
+          }
+          case "tool-output-error": {
+            if (chunk.dynamic) {
+              const toolInvocation = getDynamicToolInvocation(chunk.toolCallId);
+              updateDynamicToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: toolInvocation.toolName,
+                state: "output-error",
+                input: toolInvocation.input,
+                errorText: chunk.errorText,
+                providerExecuted: chunk.providerExecuted
+              });
+            } else {
+              const toolInvocation = getToolInvocation(chunk.toolCallId);
+              updateToolPart({
+                toolCallId: chunk.toolCallId,
+                toolName: getToolName(toolInvocation),
+                state: "output-error",
+                input: toolInvocation.input,
+                rawInput: toolInvocation.rawInput,
+                errorText: chunk.errorText,
+                providerExecuted: chunk.providerExecuted
+              });
+            }
+            write();
+            break;
+          }
+          case "start-step": {
+            state.message.parts.push({ type: "step-start" });
+            break;
+          }
+          case "finish-step": {
+            state.activeTextParts = {};
+            state.activeReasoningParts = {};
+            break;
+          }
+          case "start": {
+            if (chunk.messageId != null) {
+              state.message.id = chunk.messageId;
+            }
+            await updateMessageMetadata(chunk.messageMetadata);
+            if (chunk.messageId != null || chunk.messageMetadata != null) {
+              write();
+            }
+            break;
+          }
+          case "finish": {
+            if (chunk.finishReason != null) {
+              state.finishReason = chunk.finishReason;
+            }
+            await updateMessageMetadata(chunk.messageMetadata);
+            if (chunk.messageMetadata != null) {
+              write();
+            }
+            break;
+          }
+          case "message-metadata": {
+            await updateMessageMetadata(chunk.messageMetadata);
+            if (chunk.messageMetadata != null) {
+              write();
+            }
+            break;
+          }
+          case "error": {
+            onError == null || onError(new Error(chunk.errorText));
+            break;
+          }
+          default: {
+            if (isDataUIMessageChunk(chunk)) {
+              if ((dataPartSchemas == null ? undefined : dataPartSchemas[chunk.type]) != null) {
+                await validateTypes({
+                  value: chunk.data,
+                  schema: dataPartSchemas[chunk.type]
+                });
+              }
+              const dataChunk = chunk;
+              if (dataChunk.transient) {
+                onData == null || onData(dataChunk);
+                break;
+              }
+              const existingUIPart = dataChunk.id != null ? state.message.parts.find((chunkArg) => dataChunk.type === chunkArg.type && dataChunk.id === chunkArg.id) : undefined;
+              if (existingUIPart != null) {
+                existingUIPart.data = dataChunk.data;
+              } else {
+                state.message.parts.push(dataChunk);
+              }
+              onData == null || onData(dataChunk);
+              write();
+            }
+          }
+        }
+        controller.enqueue(chunk);
+      });
+    }
+  }));
+}
+function handleUIMessageStreamFinish({
+  messageId,
+  originalMessages = [],
+  onFinish,
+  onError,
+  stream
+}) {
+  let lastMessage = originalMessages == null ? undefined : originalMessages[originalMessages.length - 1];
+  if ((lastMessage == null ? undefined : lastMessage.role) !== "assistant") {
+    lastMessage = undefined;
+  } else {
+    messageId = lastMessage.id;
+  }
+  let isAborted = false;
+  const idInjectedStream = stream.pipeThrough(new TransformStream({
+    transform(chunk, controller) {
+      if (chunk.type === "start") {
+        const startChunk = chunk;
+        if (startChunk.messageId == null && messageId != null) {
+          startChunk.messageId = messageId;
+        }
+      }
+      if (chunk.type === "abort") {
+        isAborted = true;
+      }
+      controller.enqueue(chunk);
+    }
+  }));
+  if (onFinish == null) {
+    return idInjectedStream;
+  }
+  const state = createStreamingUIMessageState({
+    lastMessage: lastMessage ? structuredClone(lastMessage) : undefined,
+    messageId: messageId != null ? messageId : ""
+  });
+  const runUpdateMessageJob = async (job) => {
+    await job({ state, write: () => {} });
+  };
+  let finishCalled = false;
+  const callOnFinish = async () => {
+    if (finishCalled || !onFinish) {
+      return;
+    }
+    finishCalled = true;
+    const isContinuation = state.message.id === (lastMessage == null ? undefined : lastMessage.id);
+    await onFinish({
+      isAborted,
+      isContinuation,
+      responseMessage: state.message,
+      messages: [
+        ...isContinuation ? originalMessages.slice(0, -1) : originalMessages,
+        state.message
+      ],
+      finishReason: state.finishReason
+    });
+  };
+  return processUIMessageStream({
+    stream: idInjectedStream,
+    runUpdateMessageJob,
+    onError
+  }).pipeThrough(new TransformStream({
+    transform(chunk, controller) {
+      controller.enqueue(chunk);
+    },
+    async cancel() {
+      await callOnFinish();
+    },
+    async flush() {
+      await callOnFinish();
+    }
+  }));
+}
+function pipeUIMessageStreamToResponse({
+  response,
+  status,
+  statusText,
+  headers,
+  stream,
+  consumeSseStream
+}) {
+  let sseStream = stream.pipeThrough(new JsonToSseTransformStream);
+  if (consumeSseStream) {
+    const [stream1, stream2] = sseStream.tee();
+    sseStream = stream1;
+    consumeSseStream({ stream: stream2 });
+  }
+  writeToServerResponse({
+    response,
+    status,
+    statusText,
+    headers: Object.fromEntries(prepareHeaders(headers, UI_MESSAGE_STREAM_HEADERS).entries()),
+    stream: sseStream.pipeThrough(new TextEncoderStream)
+  });
+}
 function createAsyncIterableStream(source) {
   const stream = source.pipeThrough(new TransformStream);
   stream[Symbol.asyncIterator] = function() {
@@ -40927,10 +41656,1610 @@ function createAsyncIterableStream(source) {
   };
   return stream;
 }
+async function consumeStream({
+  stream,
+  onError
+}) {
+  const reader = stream.getReader();
+  try {
+    while (true) {
+      const { done } = await reader.read();
+      if (done)
+        break;
+    }
+  } catch (error) {
+    onError == null || onError(error);
+  } finally {
+    reader.releaseLock();
+  }
+}
+function createResolvablePromise() {
+  let resolve2;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve2 = res;
+    reject = rej;
+  });
+  return {
+    promise,
+    resolve: resolve2,
+    reject
+  };
+}
+function createStitchableStream() {
+  let innerStreamReaders = [];
+  let controller = null;
+  let isClosed = false;
+  let waitForNewStream = createResolvablePromise();
+  const terminate = () => {
+    isClosed = true;
+    waitForNewStream.resolve();
+    innerStreamReaders.forEach((reader) => reader.cancel());
+    innerStreamReaders = [];
+    controller == null || controller.close();
+  };
+  const processPull = async () => {
+    if (isClosed && innerStreamReaders.length === 0) {
+      controller == null || controller.close();
+      return;
+    }
+    if (innerStreamReaders.length === 0) {
+      waitForNewStream = createResolvablePromise();
+      await waitForNewStream.promise;
+      return processPull();
+    }
+    try {
+      const { value, done } = await innerStreamReaders[0].read();
+      if (done) {
+        innerStreamReaders.shift();
+        if (innerStreamReaders.length > 0) {
+          await processPull();
+        } else if (isClosed) {
+          controller == null || controller.close();
+        }
+      } else {
+        controller == null || controller.enqueue(value);
+      }
+    } catch (error) {
+      controller == null || controller.error(error);
+      innerStreamReaders.shift();
+      terminate();
+    }
+  };
+  return {
+    stream: new ReadableStream({
+      start(controllerParam) {
+        controller = controllerParam;
+      },
+      pull: processPull,
+      async cancel() {
+        for (const reader of innerStreamReaders) {
+          await reader.cancel();
+        }
+        innerStreamReaders = [];
+        isClosed = true;
+      }
+    }),
+    addStream: (innerStream) => {
+      if (isClosed) {
+        throw new Error("Cannot add inner stream: outer stream is closed");
+      }
+      innerStreamReaders.push(innerStream.getReader());
+      waitForNewStream.resolve();
+    },
+    close: () => {
+      isClosed = true;
+      waitForNewStream.resolve();
+      if (innerStreamReaders.length === 0) {
+        controller == null || controller.close();
+      }
+    },
+    terminate
+  };
+}
+function now() {
+  var _a16, _b8;
+  return (_b8 = (_a16 = globalThis == null ? undefined : globalThis.performance) == null ? undefined : _a16.now()) != null ? _b8 : Date.now();
+}
+function runToolsTransformation({
+  tools,
+  generatorStream,
+  tracer,
+  telemetry,
+  system,
+  messages,
+  abortSignal,
+  repairToolCall,
+  experimental_context
+}) {
+  let toolResultsStreamController = null;
+  const toolResultsStream = new ReadableStream({
+    start(controller) {
+      toolResultsStreamController = controller;
+    }
+  });
+  const outstandingToolResults = /* @__PURE__ */ new Set;
+  const toolInputs = /* @__PURE__ */ new Map;
+  let canClose = false;
+  let finishChunk = undefined;
+  function attemptClose() {
+    if (canClose && outstandingToolResults.size === 0) {
+      if (finishChunk != null) {
+        toolResultsStreamController.enqueue(finishChunk);
+      }
+      toolResultsStreamController.close();
+    }
+  }
+  const forwardStream = new TransformStream({
+    async transform(chunk, controller) {
+      const chunkType = chunk.type;
+      switch (chunkType) {
+        case "stream-start":
+        case "text-start":
+        case "text-delta":
+        case "text-end":
+        case "reasoning-start":
+        case "reasoning-delta":
+        case "reasoning-end":
+        case "tool-input-start":
+        case "tool-input-delta":
+        case "tool-input-end":
+        case "source":
+        case "response-metadata":
+        case "error":
+        case "raw": {
+          controller.enqueue(chunk);
+          break;
+        }
+        case "file": {
+          controller.enqueue({
+            type: "file",
+            file: new DefaultGeneratedFileWithType({
+              data: chunk.data,
+              mediaType: chunk.mediaType
+            })
+          });
+          break;
+        }
+        case "finish": {
+          finishChunk = {
+            type: "finish",
+            finishReason: chunk.finishReason,
+            usage: chunk.usage,
+            providerMetadata: chunk.providerMetadata
+          };
+          break;
+        }
+        case "tool-call": {
+          try {
+            const toolCall = await parseToolCall({
+              toolCall: chunk,
+              tools,
+              repairToolCall,
+              system,
+              messages
+            });
+            controller.enqueue(toolCall);
+            if (toolCall.invalid) {
+              toolResultsStreamController.enqueue({
+                type: "tool-error",
+                toolCallId: toolCall.toolCallId,
+                toolName: toolCall.toolName,
+                input: toolCall.input,
+                error: getErrorMessage2(toolCall.error),
+                dynamic: true
+              });
+              break;
+            }
+            const tool2 = tools[toolCall.toolName];
+            toolInputs.set(toolCall.toolCallId, toolCall.input);
+            if (tool2.onInputAvailable != null) {
+              await tool2.onInputAvailable({
+                input: toolCall.input,
+                toolCallId: toolCall.toolCallId,
+                messages,
+                abortSignal,
+                experimental_context
+              });
+            }
+            if (tool2.execute != null && toolCall.providerExecuted !== true) {
+              const toolExecutionId = generateId();
+              outstandingToolResults.add(toolExecutionId);
+              recordSpan({
+                name: "ai.toolCall",
+                attributes: selectTelemetryAttributes({
+                  telemetry,
+                  attributes: {
+                    ...assembleOperationName({
+                      operationId: "ai.toolCall",
+                      telemetry
+                    }),
+                    "ai.toolCall.name": toolCall.toolName,
+                    "ai.toolCall.id": toolCall.toolCallId,
+                    "ai.toolCall.args": {
+                      output: () => JSON.stringify(toolCall.input)
+                    }
+                  }
+                }),
+                tracer,
+                fn: async (span) => {
+                  let output;
+                  try {
+                    const stream = executeTool({
+                      execute: tool2.execute.bind(tool2),
+                      input: toolCall.input,
+                      options: {
+                        toolCallId: toolCall.toolCallId,
+                        messages,
+                        abortSignal,
+                        experimental_context
+                      }
+                    });
+                    for await (const part of stream) {
+                      toolResultsStreamController.enqueue({
+                        ...toolCall,
+                        type: "tool-result",
+                        output: part.output,
+                        ...part.type === "preliminary" && {
+                          preliminary: true
+                        }
+                      });
+                      if (part.type === "final") {
+                        output = part.output;
+                      }
+                    }
+                  } catch (error) {
+                    recordErrorOnSpan(span, error);
+                    toolResultsStreamController.enqueue({
+                      ...toolCall,
+                      type: "tool-error",
+                      error
+                    });
+                    outstandingToolResults.delete(toolExecutionId);
+                    attemptClose();
+                    return;
+                  }
+                  outstandingToolResults.delete(toolExecutionId);
+                  attemptClose();
+                  try {
+                    span.setAttributes(selectTelemetryAttributes({
+                      telemetry,
+                      attributes: {
+                        "ai.toolCall.result": {
+                          output: () => JSON.stringify(output)
+                        }
+                      }
+                    }));
+                  } catch (ignored) {}
+                }
+              });
+            }
+          } catch (error) {
+            toolResultsStreamController.enqueue({ type: "error", error });
+          }
+          break;
+        }
+        case "tool-result": {
+          const toolName = chunk.toolName;
+          if (chunk.isError) {
+            toolResultsStreamController.enqueue({
+              type: "tool-error",
+              toolCallId: chunk.toolCallId,
+              toolName,
+              input: toolInputs.get(chunk.toolCallId),
+              providerExecuted: chunk.providerExecuted,
+              error: chunk.result
+            });
+          } else {
+            controller.enqueue({
+              type: "tool-result",
+              toolCallId: chunk.toolCallId,
+              toolName,
+              input: toolInputs.get(chunk.toolCallId),
+              output: chunk.result,
+              providerExecuted: chunk.providerExecuted
+            });
+          }
+          break;
+        }
+        default: {
+          const _exhaustiveCheck = chunkType;
+          throw new Error(`Unhandled chunk type: ${_exhaustiveCheck}`);
+        }
+      }
+    },
+    flush() {
+      canClose = true;
+      attemptClose();
+    }
+  });
+  return new ReadableStream({
+    async start(controller) {
+      return Promise.all([
+        generatorStream.pipeThrough(forwardStream).pipeTo(new WritableStream({
+          write(chunk) {
+            controller.enqueue(chunk);
+          },
+          close() {}
+        })),
+        toolResultsStream.pipeTo(new WritableStream({
+          write(chunk) {
+            controller.enqueue(chunk);
+          },
+          close() {
+            controller.close();
+          }
+        }))
+      ]);
+    }
+  });
+}
 var originalGenerateId2 = createIdGenerator({
   prefix: "aitxt",
   size: 24
 });
+function streamText({
+  model,
+  tools,
+  toolChoice,
+  system,
+  prompt,
+  messages,
+  maxRetries,
+  abortSignal,
+  headers,
+  stopWhen = stepCountIs(1),
+  experimental_output: output,
+  experimental_telemetry: telemetry,
+  prepareStep,
+  providerOptions,
+  experimental_activeTools,
+  activeTools = experimental_activeTools,
+  experimental_repairToolCall: repairToolCall,
+  experimental_transform: transform,
+  experimental_download: download2,
+  includeRawChunks = false,
+  onChunk,
+  onError = ({ error }) => {
+    console.error(error);
+  },
+  onFinish,
+  onAbort,
+  onStepFinish,
+  experimental_context,
+  _internal: {
+    now: now2 = now,
+    generateId: generateId3 = originalGenerateId2,
+    currentDate = () => /* @__PURE__ */ new Date
+  } = {},
+  ...settings
+}) {
+  return new DefaultStreamTextResult({
+    model: resolveLanguageModel(model),
+    telemetry,
+    headers,
+    settings,
+    maxRetries,
+    abortSignal,
+    system,
+    prompt,
+    messages,
+    tools,
+    toolChoice,
+    transforms: asArray(transform),
+    activeTools,
+    repairToolCall,
+    stopConditions: asArray(stopWhen),
+    output,
+    providerOptions,
+    prepareStep,
+    includeRawChunks,
+    onChunk,
+    onError,
+    onFinish,
+    onAbort,
+    onStepFinish,
+    now: now2,
+    currentDate,
+    generateId: generateId3,
+    experimental_context,
+    download: download2
+  });
+}
+function createOutputTransformStream(output) {
+  if (!output) {
+    return new TransformStream({
+      transform(chunk, controller) {
+        controller.enqueue({ part: chunk, partialOutput: undefined });
+      }
+    });
+  }
+  let firstTextChunkId = undefined;
+  let text2 = "";
+  let textChunk = "";
+  let lastPublishedJson = "";
+  function publishTextChunk({
+    controller,
+    partialOutput = undefined
+  }) {
+    controller.enqueue({
+      part: {
+        type: "text-delta",
+        id: firstTextChunkId,
+        text: textChunk
+      },
+      partialOutput
+    });
+    textChunk = "";
+  }
+  return new TransformStream({
+    async transform(chunk, controller) {
+      if (chunk.type === "finish-step" && textChunk.length > 0) {
+        publishTextChunk({ controller });
+      }
+      if (chunk.type !== "text-delta" && chunk.type !== "text-start" && chunk.type !== "text-end") {
+        controller.enqueue({ part: chunk, partialOutput: undefined });
+        return;
+      }
+      if (firstTextChunkId == null) {
+        firstTextChunkId = chunk.id;
+      } else if (chunk.id !== firstTextChunkId) {
+        controller.enqueue({ part: chunk, partialOutput: undefined });
+        return;
+      }
+      if (chunk.type === "text-start") {
+        controller.enqueue({ part: chunk, partialOutput: undefined });
+        return;
+      }
+      if (chunk.type === "text-end") {
+        if (textChunk.length > 0) {
+          publishTextChunk({ controller });
+        }
+        controller.enqueue({ part: chunk, partialOutput: undefined });
+        return;
+      }
+      text2 += chunk.text;
+      textChunk += chunk.text;
+      const result = await output.parsePartial({ text: text2 });
+      if (result != null) {
+        const currentJson = JSON.stringify(result.partial);
+        if (currentJson !== lastPublishedJson) {
+          publishTextChunk({ controller, partialOutput: result.partial });
+          lastPublishedJson = currentJson;
+        }
+      }
+    }
+  });
+}
+var DefaultStreamTextResult = class {
+  constructor({
+    model,
+    telemetry,
+    headers,
+    settings,
+    maxRetries: maxRetriesArg,
+    abortSignal,
+    system,
+    prompt,
+    messages,
+    tools,
+    toolChoice,
+    transforms,
+    activeTools,
+    repairToolCall,
+    stopConditions,
+    output,
+    providerOptions,
+    prepareStep,
+    includeRawChunks,
+    now: now2,
+    currentDate,
+    generateId: generateId3,
+    onChunk,
+    onError,
+    onFinish,
+    onAbort,
+    onStepFinish,
+    experimental_context,
+    download: download2
+  }) {
+    this._totalUsage = new DelayedPromise;
+    this._finishReason = new DelayedPromise;
+    this._steps = new DelayedPromise;
+    this.output = output;
+    this.includeRawChunks = includeRawChunks;
+    this.tools = tools;
+    let stepFinish;
+    let recordedContent = [];
+    const recordedResponseMessages = [];
+    let recordedFinishReason = undefined;
+    let recordedTotalUsage = undefined;
+    let recordedRequest = {};
+    let recordedWarnings = [];
+    const recordedSteps = [];
+    let rootSpan;
+    let activeTextContent = {};
+    let activeReasoningContent = {};
+    const eventProcessor = new TransformStream({
+      async transform(chunk, controller) {
+        var _a16, _b8, _c, _d;
+        controller.enqueue(chunk);
+        const { part } = chunk;
+        if (part.type === "text-delta" || part.type === "reasoning-delta" || part.type === "source" || part.type === "tool-call" || part.type === "tool-result" || part.type === "tool-input-start" || part.type === "tool-input-delta" || part.type === "raw") {
+          await (onChunk == null ? undefined : onChunk({ chunk: part }));
+        }
+        if (part.type === "error") {
+          await onError({ error: wrapGatewayError(part.error) });
+        }
+        if (part.type === "text-start") {
+          activeTextContent[part.id] = {
+            type: "text",
+            text: "",
+            providerMetadata: part.providerMetadata
+          };
+          recordedContent.push(activeTextContent[part.id]);
+        }
+        if (part.type === "text-delta") {
+          const activeText = activeTextContent[part.id];
+          if (activeText == null) {
+            controller.enqueue({
+              part: {
+                type: "error",
+                error: `text part ${part.id} not found`
+              },
+              partialOutput: undefined
+            });
+            return;
+          }
+          activeText.text += part.text;
+          activeText.providerMetadata = (_a16 = part.providerMetadata) != null ? _a16 : activeText.providerMetadata;
+        }
+        if (part.type === "text-end") {
+          const activeText = activeTextContent[part.id];
+          if (activeText == null) {
+            controller.enqueue({
+              part: {
+                type: "error",
+                error: `text part ${part.id} not found`
+              },
+              partialOutput: undefined
+            });
+            return;
+          }
+          activeText.providerMetadata = (_b8 = part.providerMetadata) != null ? _b8 : activeText.providerMetadata;
+          delete activeTextContent[part.id];
+        }
+        if (part.type === "reasoning-start") {
+          activeReasoningContent[part.id] = {
+            type: "reasoning",
+            text: "",
+            providerMetadata: part.providerMetadata
+          };
+          recordedContent.push(activeReasoningContent[part.id]);
+        }
+        if (part.type === "reasoning-delta") {
+          const activeReasoning = activeReasoningContent[part.id];
+          if (activeReasoning == null) {
+            controller.enqueue({
+              part: {
+                type: "error",
+                error: `reasoning part ${part.id} not found`
+              },
+              partialOutput: undefined
+            });
+            return;
+          }
+          activeReasoning.text += part.text;
+          activeReasoning.providerMetadata = (_c = part.providerMetadata) != null ? _c : activeReasoning.providerMetadata;
+        }
+        if (part.type === "reasoning-end") {
+          const activeReasoning = activeReasoningContent[part.id];
+          if (activeReasoning == null) {
+            controller.enqueue({
+              part: {
+                type: "error",
+                error: `reasoning part ${part.id} not found`
+              },
+              partialOutput: undefined
+            });
+            return;
+          }
+          activeReasoning.providerMetadata = (_d = part.providerMetadata) != null ? _d : activeReasoning.providerMetadata;
+          delete activeReasoningContent[part.id];
+        }
+        if (part.type === "file") {
+          recordedContent.push({ type: "file", file: part.file });
+        }
+        if (part.type === "source") {
+          recordedContent.push(part);
+        }
+        if (part.type === "tool-call") {
+          recordedContent.push(part);
+        }
+        if (part.type === "tool-result" && !part.preliminary) {
+          recordedContent.push(part);
+        }
+        if (part.type === "tool-error") {
+          recordedContent.push(part);
+        }
+        if (part.type === "start-step") {
+          recordedRequest = part.request;
+          recordedWarnings = part.warnings;
+        }
+        if (part.type === "finish-step") {
+          const stepMessages = toResponseMessages({
+            content: recordedContent,
+            tools
+          });
+          const currentStepResult = new DefaultStepResult({
+            content: recordedContent,
+            finishReason: part.finishReason,
+            usage: part.usage,
+            warnings: recordedWarnings,
+            request: recordedRequest,
+            response: {
+              ...part.response,
+              messages: [...recordedResponseMessages, ...stepMessages]
+            },
+            providerMetadata: part.providerMetadata
+          });
+          await (onStepFinish == null ? undefined : onStepFinish(currentStepResult));
+          logWarnings(recordedWarnings);
+          recordedSteps.push(currentStepResult);
+          recordedContent = [];
+          activeReasoningContent = {};
+          activeTextContent = {};
+          recordedResponseMessages.push(...stepMessages);
+          stepFinish.resolve();
+        }
+        if (part.type === "finish") {
+          recordedTotalUsage = part.totalUsage;
+          recordedFinishReason = part.finishReason;
+        }
+      },
+      async flush(controller) {
+        try {
+          if (recordedSteps.length === 0) {
+            const error = new NoOutputGeneratedError({
+              message: "No output generated. Check the stream for errors."
+            });
+            self2._finishReason.reject(error);
+            self2._totalUsage.reject(error);
+            self2._steps.reject(error);
+            return;
+          }
+          const finishReason = recordedFinishReason != null ? recordedFinishReason : "unknown";
+          const totalUsage = recordedTotalUsage != null ? recordedTotalUsage : {
+            inputTokens: undefined,
+            outputTokens: undefined,
+            totalTokens: undefined
+          };
+          self2._finishReason.resolve(finishReason);
+          self2._totalUsage.resolve(totalUsage);
+          self2._steps.resolve(recordedSteps);
+          const finalStep = recordedSteps[recordedSteps.length - 1];
+          await (onFinish == null ? undefined : onFinish({
+            finishReason,
+            totalUsage,
+            usage: finalStep.usage,
+            content: finalStep.content,
+            text: finalStep.text,
+            reasoningText: finalStep.reasoningText,
+            reasoning: finalStep.reasoning,
+            files: finalStep.files,
+            sources: finalStep.sources,
+            toolCalls: finalStep.toolCalls,
+            staticToolCalls: finalStep.staticToolCalls,
+            dynamicToolCalls: finalStep.dynamicToolCalls,
+            toolResults: finalStep.toolResults,
+            staticToolResults: finalStep.staticToolResults,
+            dynamicToolResults: finalStep.dynamicToolResults,
+            request: finalStep.request,
+            response: finalStep.response,
+            warnings: finalStep.warnings,
+            providerMetadata: finalStep.providerMetadata,
+            steps: recordedSteps
+          }));
+          rootSpan.setAttributes(selectTelemetryAttributes({
+            telemetry,
+            attributes: {
+              "ai.response.finishReason": finishReason,
+              "ai.response.text": { output: () => finalStep.text },
+              "ai.response.toolCalls": {
+                output: () => {
+                  var _a16;
+                  return ((_a16 = finalStep.toolCalls) == null ? undefined : _a16.length) ? JSON.stringify(finalStep.toolCalls) : undefined;
+                }
+              },
+              "ai.response.providerMetadata": JSON.stringify(finalStep.providerMetadata),
+              "ai.usage.inputTokens": totalUsage.inputTokens,
+              "ai.usage.outputTokens": totalUsage.outputTokens,
+              "ai.usage.totalTokens": totalUsage.totalTokens,
+              "ai.usage.reasoningTokens": totalUsage.reasoningTokens,
+              "ai.usage.cachedInputTokens": totalUsage.cachedInputTokens
+            }
+          }));
+        } catch (error) {
+          controller.error(error);
+        } finally {
+          rootSpan.end();
+        }
+      }
+    });
+    const stitchableStream = createStitchableStream();
+    this.addStream = stitchableStream.addStream;
+    this.closeStream = stitchableStream.close;
+    const reader = stitchableStream.stream.getReader();
+    let stream = new ReadableStream({
+      async start(controller) {
+        controller.enqueue({ type: "start" });
+      },
+      async pull(controller) {
+        function abort() {
+          onAbort == null || onAbort({ steps: recordedSteps });
+          controller.enqueue({ type: "abort" });
+          controller.close();
+        }
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            return;
+          }
+          if (abortSignal == null ? undefined : abortSignal.aborted) {
+            abort();
+            return;
+          }
+          controller.enqueue(value);
+        } catch (error) {
+          if (isAbortError(error) && (abortSignal == null ? undefined : abortSignal.aborted)) {
+            abort();
+          } else {
+            controller.error(error);
+          }
+        }
+      },
+      cancel(reason) {
+        return stitchableStream.stream.cancel(reason);
+      }
+    });
+    for (const transform of transforms) {
+      stream = stream.pipeThrough(transform({
+        tools,
+        stopStream() {
+          stitchableStream.terminate();
+        }
+      }));
+    }
+    this.baseStream = stream.pipeThrough(createOutputTransformStream(output)).pipeThrough(eventProcessor);
+    const { maxRetries, retry } = prepareRetries({
+      maxRetries: maxRetriesArg,
+      abortSignal
+    });
+    const tracer = getTracer(telemetry);
+    const callSettings = prepareCallSettings(settings);
+    const baseTelemetryAttributes = getBaseTelemetryAttributes({
+      model,
+      telemetry,
+      headers,
+      settings: { ...callSettings, maxRetries }
+    });
+    const self2 = this;
+    recordSpan({
+      name: "ai.streamText",
+      attributes: selectTelemetryAttributes({
+        telemetry,
+        attributes: {
+          ...assembleOperationName({ operationId: "ai.streamText", telemetry }),
+          ...baseTelemetryAttributes,
+          "ai.prompt": {
+            input: () => JSON.stringify({ system, prompt, messages })
+          }
+        }
+      }),
+      tracer,
+      endWhenDone: false,
+      fn: async (rootSpanArg) => {
+        rootSpan = rootSpanArg;
+        async function streamStep({
+          currentStep,
+          responseMessages,
+          usage
+        }) {
+          var _a16, _b8, _c, _d, _e;
+          const includeRawChunks2 = self2.includeRawChunks;
+          stepFinish = new DelayedPromise;
+          const initialPrompt = await standardizePrompt({
+            system,
+            prompt,
+            messages
+          });
+          const stepInputMessages = [
+            ...initialPrompt.messages,
+            ...responseMessages
+          ];
+          const prepareStepResult = await (prepareStep == null ? undefined : prepareStep({
+            model,
+            steps: recordedSteps,
+            stepNumber: recordedSteps.length,
+            messages: stepInputMessages
+          }));
+          const stepModel = resolveLanguageModel((_a16 = prepareStepResult == null ? undefined : prepareStepResult.model) != null ? _a16 : model);
+          const promptMessages = await convertToLanguageModelPrompt({
+            prompt: {
+              system: (_b8 = prepareStepResult == null ? undefined : prepareStepResult.system) != null ? _b8 : initialPrompt.system,
+              messages: (_c = prepareStepResult == null ? undefined : prepareStepResult.messages) != null ? _c : stepInputMessages
+            },
+            supportedUrls: await stepModel.supportedUrls,
+            download: download2
+          });
+          const { toolChoice: stepToolChoice, tools: stepTools } = prepareToolsAndToolChoice({
+            tools,
+            toolChoice: (_d = prepareStepResult == null ? undefined : prepareStepResult.toolChoice) != null ? _d : toolChoice,
+            activeTools: (_e = prepareStepResult == null ? undefined : prepareStepResult.activeTools) != null ? _e : activeTools
+          });
+          const {
+            result: { stream: stream2, response, request },
+            doStreamSpan,
+            startTimestampMs
+          } = await retry(() => recordSpan({
+            name: "ai.streamText.doStream",
+            attributes: selectTelemetryAttributes({
+              telemetry,
+              attributes: {
+                ...assembleOperationName({
+                  operationId: "ai.streamText.doStream",
+                  telemetry
+                }),
+                ...baseTelemetryAttributes,
+                "ai.model.provider": stepModel.provider,
+                "ai.model.id": stepModel.modelId,
+                "ai.prompt.messages": {
+                  input: () => stringifyForTelemetry(promptMessages)
+                },
+                "ai.prompt.tools": {
+                  input: () => stepTools == null ? undefined : stepTools.map((tool2) => JSON.stringify(tool2))
+                },
+                "ai.prompt.toolChoice": {
+                  input: () => stepToolChoice != null ? JSON.stringify(stepToolChoice) : undefined
+                },
+                "gen_ai.system": stepModel.provider,
+                "gen_ai.request.model": stepModel.modelId,
+                "gen_ai.request.frequency_penalty": callSettings.frequencyPenalty,
+                "gen_ai.request.max_tokens": callSettings.maxOutputTokens,
+                "gen_ai.request.presence_penalty": callSettings.presencePenalty,
+                "gen_ai.request.stop_sequences": callSettings.stopSequences,
+                "gen_ai.request.temperature": callSettings.temperature,
+                "gen_ai.request.top_k": callSettings.topK,
+                "gen_ai.request.top_p": callSettings.topP
+              }
+            }),
+            tracer,
+            endWhenDone: false,
+            fn: async (doStreamSpan2) => {
+              return {
+                startTimestampMs: now2(),
+                doStreamSpan: doStreamSpan2,
+                result: await stepModel.doStream({
+                  ...callSettings,
+                  tools: stepTools,
+                  toolChoice: stepToolChoice,
+                  responseFormat: output == null ? undefined : output.responseFormat,
+                  prompt: promptMessages,
+                  providerOptions,
+                  abortSignal,
+                  headers,
+                  includeRawChunks: includeRawChunks2
+                })
+              };
+            }
+          }));
+          const streamWithToolResults = runToolsTransformation({
+            tools,
+            generatorStream: stream2,
+            tracer,
+            telemetry,
+            system,
+            messages: stepInputMessages,
+            repairToolCall,
+            abortSignal,
+            experimental_context
+          });
+          const stepRequest = request != null ? request : {};
+          const stepToolCalls = [];
+          const stepToolOutputs = [];
+          let warnings;
+          const activeToolCallToolNames = {};
+          let stepFinishReason = "unknown";
+          let stepUsage = {
+            inputTokens: undefined,
+            outputTokens: undefined,
+            totalTokens: undefined
+          };
+          let stepProviderMetadata;
+          let stepFirstChunk = true;
+          let stepResponse = {
+            id: generateId3(),
+            timestamp: currentDate(),
+            modelId: model.modelId
+          };
+          let activeText = "";
+          self2.addStream(streamWithToolResults.pipeThrough(new TransformStream({
+            async transform(chunk, controller) {
+              var _a172, _b22, _c2, _d2;
+              if (chunk.type === "stream-start") {
+                warnings = chunk.warnings;
+                return;
+              }
+              if (stepFirstChunk) {
+                const msToFirstChunk = now2() - startTimestampMs;
+                stepFirstChunk = false;
+                doStreamSpan.addEvent("ai.stream.firstChunk", {
+                  "ai.response.msToFirstChunk": msToFirstChunk
+                });
+                doStreamSpan.setAttributes({
+                  "ai.response.msToFirstChunk": msToFirstChunk
+                });
+                controller.enqueue({
+                  type: "start-step",
+                  request: stepRequest,
+                  warnings: warnings != null ? warnings : []
+                });
+              }
+              const chunkType = chunk.type;
+              switch (chunkType) {
+                case "text-start":
+                case "text-end": {
+                  controller.enqueue(chunk);
+                  break;
+                }
+                case "text-delta": {
+                  if (chunk.delta.length > 0) {
+                    controller.enqueue({
+                      type: "text-delta",
+                      id: chunk.id,
+                      text: chunk.delta,
+                      providerMetadata: chunk.providerMetadata
+                    });
+                    activeText += chunk.delta;
+                  }
+                  break;
+                }
+                case "reasoning-start":
+                case "reasoning-end": {
+                  controller.enqueue(chunk);
+                  break;
+                }
+                case "reasoning-delta": {
+                  controller.enqueue({
+                    type: "reasoning-delta",
+                    id: chunk.id,
+                    text: chunk.delta,
+                    providerMetadata: chunk.providerMetadata
+                  });
+                  break;
+                }
+                case "tool-call": {
+                  controller.enqueue(chunk);
+                  stepToolCalls.push(chunk);
+                  break;
+                }
+                case "tool-result": {
+                  controller.enqueue(chunk);
+                  if (!chunk.preliminary) {
+                    stepToolOutputs.push(chunk);
+                  }
+                  break;
+                }
+                case "tool-error": {
+                  controller.enqueue(chunk);
+                  stepToolOutputs.push(chunk);
+                  break;
+                }
+                case "response-metadata": {
+                  stepResponse = {
+                    id: (_a172 = chunk.id) != null ? _a172 : stepResponse.id,
+                    timestamp: (_b22 = chunk.timestamp) != null ? _b22 : stepResponse.timestamp,
+                    modelId: (_c2 = chunk.modelId) != null ? _c2 : stepResponse.modelId
+                  };
+                  break;
+                }
+                case "finish": {
+                  stepUsage = chunk.usage;
+                  stepFinishReason = chunk.finishReason;
+                  stepProviderMetadata = chunk.providerMetadata;
+                  const msToFinish = now2() - startTimestampMs;
+                  doStreamSpan.addEvent("ai.stream.finish");
+                  doStreamSpan.setAttributes({
+                    "ai.response.msToFinish": msToFinish,
+                    "ai.response.avgOutputTokensPerSecond": 1000 * ((_d2 = stepUsage.outputTokens) != null ? _d2 : 0) / msToFinish
+                  });
+                  break;
+                }
+                case "file": {
+                  controller.enqueue(chunk);
+                  break;
+                }
+                case "source": {
+                  controller.enqueue(chunk);
+                  break;
+                }
+                case "tool-input-start": {
+                  activeToolCallToolNames[chunk.id] = chunk.toolName;
+                  const tool2 = tools == null ? undefined : tools[chunk.toolName];
+                  if ((tool2 == null ? undefined : tool2.onInputStart) != null) {
+                    await tool2.onInputStart({
+                      toolCallId: chunk.id,
+                      messages: stepInputMessages,
+                      abortSignal,
+                      experimental_context
+                    });
+                  }
+                  controller.enqueue({
+                    ...chunk,
+                    dynamic: (tool2 == null ? undefined : tool2.type) === "dynamic"
+                  });
+                  break;
+                }
+                case "tool-input-end": {
+                  delete activeToolCallToolNames[chunk.id];
+                  controller.enqueue(chunk);
+                  break;
+                }
+                case "tool-input-delta": {
+                  const toolName = activeToolCallToolNames[chunk.id];
+                  const tool2 = tools == null ? undefined : tools[toolName];
+                  if ((tool2 == null ? undefined : tool2.onInputDelta) != null) {
+                    await tool2.onInputDelta({
+                      inputTextDelta: chunk.delta,
+                      toolCallId: chunk.id,
+                      messages: stepInputMessages,
+                      abortSignal,
+                      experimental_context
+                    });
+                  }
+                  controller.enqueue(chunk);
+                  break;
+                }
+                case "error": {
+                  controller.enqueue(chunk);
+                  stepFinishReason = "error";
+                  break;
+                }
+                case "raw": {
+                  if (includeRawChunks2) {
+                    controller.enqueue(chunk);
+                  }
+                  break;
+                }
+                default: {
+                  const exhaustiveCheck = chunkType;
+                  throw new Error(`Unknown chunk type: ${exhaustiveCheck}`);
+                }
+              }
+            },
+            async flush(controller) {
+              const stepToolCallsJson = stepToolCalls.length > 0 ? JSON.stringify(stepToolCalls) : undefined;
+              try {
+                doStreamSpan.setAttributes(selectTelemetryAttributes({
+                  telemetry,
+                  attributes: {
+                    "ai.response.finishReason": stepFinishReason,
+                    "ai.response.text": {
+                      output: () => activeText
+                    },
+                    "ai.response.toolCalls": {
+                      output: () => stepToolCallsJson
+                    },
+                    "ai.response.id": stepResponse.id,
+                    "ai.response.model": stepResponse.modelId,
+                    "ai.response.timestamp": stepResponse.timestamp.toISOString(),
+                    "ai.response.providerMetadata": JSON.stringify(stepProviderMetadata),
+                    "ai.usage.inputTokens": stepUsage.inputTokens,
+                    "ai.usage.outputTokens": stepUsage.outputTokens,
+                    "ai.usage.totalTokens": stepUsage.totalTokens,
+                    "ai.usage.reasoningTokens": stepUsage.reasoningTokens,
+                    "ai.usage.cachedInputTokens": stepUsage.cachedInputTokens,
+                    "gen_ai.response.finish_reasons": [stepFinishReason],
+                    "gen_ai.response.id": stepResponse.id,
+                    "gen_ai.response.model": stepResponse.modelId,
+                    "gen_ai.usage.input_tokens": stepUsage.inputTokens,
+                    "gen_ai.usage.output_tokens": stepUsage.outputTokens
+                  }
+                }));
+              } catch (error) {} finally {
+                doStreamSpan.end();
+              }
+              controller.enqueue({
+                type: "finish-step",
+                finishReason: stepFinishReason,
+                usage: stepUsage,
+                providerMetadata: stepProviderMetadata,
+                response: {
+                  ...stepResponse,
+                  headers: response == null ? undefined : response.headers
+                }
+              });
+              const combinedUsage = addLanguageModelUsage(usage, stepUsage);
+              await stepFinish.promise;
+              const clientToolCalls = stepToolCalls.filter((toolCall) => toolCall.providerExecuted !== true);
+              const clientToolOutputs = stepToolOutputs.filter((toolOutput) => toolOutput.providerExecuted !== true);
+              if (clientToolCalls.length > 0 && clientToolOutputs.length === clientToolCalls.length && !await isStopConditionMet({
+                stopConditions,
+                steps: recordedSteps
+              })) {
+                responseMessages.push(...toResponseMessages({
+                  content: recordedSteps[recordedSteps.length - 1].content,
+                  tools
+                }));
+                try {
+                  await streamStep({
+                    currentStep: currentStep + 1,
+                    responseMessages,
+                    usage: combinedUsage
+                  });
+                } catch (error) {
+                  controller.enqueue({
+                    type: "error",
+                    error
+                  });
+                  self2.closeStream();
+                }
+              } else {
+                controller.enqueue({
+                  type: "finish",
+                  finishReason: stepFinishReason,
+                  totalUsage: combinedUsage
+                });
+                self2.closeStream();
+              }
+            }
+          })));
+        }
+        await streamStep({
+          currentStep: 0,
+          responseMessages: [],
+          usage: {
+            inputTokens: undefined,
+            outputTokens: undefined,
+            totalTokens: undefined
+          }
+        });
+      }
+    }).catch((error) => {
+      self2.addStream(new ReadableStream({
+        start(controller) {
+          controller.enqueue({ type: "error", error });
+          controller.close();
+        }
+      }));
+      self2.closeStream();
+    });
+  }
+  get steps() {
+    this.consumeStream();
+    return this._steps.promise;
+  }
+  get finalStep() {
+    return this.steps.then((steps) => steps[steps.length - 1]);
+  }
+  get content() {
+    return this.finalStep.then((step) => step.content);
+  }
+  get warnings() {
+    return this.finalStep.then((step) => step.warnings);
+  }
+  get providerMetadata() {
+    return this.finalStep.then((step) => step.providerMetadata);
+  }
+  get text() {
+    return this.finalStep.then((step) => step.text);
+  }
+  get reasoningText() {
+    return this.finalStep.then((step) => step.reasoningText);
+  }
+  get reasoning() {
+    return this.finalStep.then((step) => step.reasoning);
+  }
+  get sources() {
+    return this.finalStep.then((step) => step.sources);
+  }
+  get files() {
+    return this.finalStep.then((step) => step.files);
+  }
+  get toolCalls() {
+    return this.finalStep.then((step) => step.toolCalls);
+  }
+  get staticToolCalls() {
+    return this.finalStep.then((step) => step.staticToolCalls);
+  }
+  get dynamicToolCalls() {
+    return this.finalStep.then((step) => step.dynamicToolCalls);
+  }
+  get toolResults() {
+    return this.finalStep.then((step) => step.toolResults);
+  }
+  get staticToolResults() {
+    return this.finalStep.then((step) => step.staticToolResults);
+  }
+  get dynamicToolResults() {
+    return this.finalStep.then((step) => step.dynamicToolResults);
+  }
+  get usage() {
+    return this.finalStep.then((step) => step.usage);
+  }
+  get request() {
+    return this.finalStep.then((step) => step.request);
+  }
+  get response() {
+    return this.finalStep.then((step) => step.response);
+  }
+  get totalUsage() {
+    this.consumeStream();
+    return this._totalUsage.promise;
+  }
+  get finishReason() {
+    this.consumeStream();
+    return this._finishReason.promise;
+  }
+  teeStream() {
+    const [stream1, stream2] = this.baseStream.tee();
+    this.baseStream = stream2;
+    return stream1;
+  }
+  get textStream() {
+    return createAsyncIterableStream(this.teeStream().pipeThrough(new TransformStream({
+      transform({ part }, controller) {
+        if (part.type === "text-delta") {
+          controller.enqueue(part.text);
+        }
+      }
+    })));
+  }
+  get fullStream() {
+    return createAsyncIterableStream(this.teeStream().pipeThrough(new TransformStream({
+      transform({ part }, controller) {
+        controller.enqueue(part);
+      }
+    })));
+  }
+  async consumeStream(options) {
+    var _a16;
+    try {
+      await consumeStream({
+        stream: this.fullStream,
+        onError: options == null ? undefined : options.onError
+      });
+    } catch (error) {
+      (_a16 = options == null ? undefined : options.onError) == null || _a16.call(options, error);
+    }
+  }
+  get experimental_partialOutputStream() {
+    if (this.output == null) {
+      throw new NoOutputSpecifiedError;
+    }
+    return createAsyncIterableStream(this.teeStream().pipeThrough(new TransformStream({
+      transform({ partialOutput }, controller) {
+        if (partialOutput != null) {
+          controller.enqueue(partialOutput);
+        }
+      }
+    })));
+  }
+  toUIMessageStream({
+    originalMessages,
+    generateMessageId,
+    onFinish,
+    messageMetadata,
+    sendReasoning = true,
+    sendSources = false,
+    sendStart = true,
+    sendFinish = true,
+    onError = getErrorMessage
+  } = {}) {
+    const responseMessageId = generateMessageId != null ? getResponseUIMessageId({
+      originalMessages,
+      responseMessageId: generateMessageId
+    }) : undefined;
+    const toolNamesByCallId = {};
+    const isDynamic = (toolCallId) => {
+      var _a16, _b8;
+      const toolName = toolNamesByCallId[toolCallId];
+      const dynamic = ((_b8 = (_a16 = this.tools) == null ? undefined : _a16[toolName]) == null ? undefined : _b8.type) === "dynamic";
+      return dynamic ? true : undefined;
+    };
+    const baseStream = this.fullStream.pipeThrough(new TransformStream({
+      transform: async (part, controller) => {
+        const messageMetadataValue = messageMetadata == null ? undefined : messageMetadata({ part });
+        const partType = part.type;
+        switch (partType) {
+          case "text-start": {
+            controller.enqueue({
+              type: "text-start",
+              id: part.id,
+              ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {}
+            });
+            break;
+          }
+          case "text-delta": {
+            controller.enqueue({
+              type: "text-delta",
+              id: part.id,
+              delta: part.text,
+              ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {}
+            });
+            break;
+          }
+          case "text-end": {
+            controller.enqueue({
+              type: "text-end",
+              id: part.id,
+              ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {}
+            });
+            break;
+          }
+          case "reasoning-start": {
+            controller.enqueue({
+              type: "reasoning-start",
+              id: part.id,
+              ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {}
+            });
+            break;
+          }
+          case "reasoning-delta": {
+            if (sendReasoning) {
+              controller.enqueue({
+                type: "reasoning-delta",
+                id: part.id,
+                delta: part.text,
+                ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {}
+              });
+            }
+            break;
+          }
+          case "reasoning-end": {
+            controller.enqueue({
+              type: "reasoning-end",
+              id: part.id,
+              ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {}
+            });
+            break;
+          }
+          case "file": {
+            controller.enqueue({
+              type: "file",
+              mediaType: part.file.mediaType,
+              url: `data:${part.file.mediaType};base64,${part.file.base64}`
+            });
+            break;
+          }
+          case "source": {
+            if (sendSources && part.sourceType === "url") {
+              controller.enqueue({
+                type: "source-url",
+                sourceId: part.id,
+                url: part.url,
+                title: part.title,
+                ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {}
+              });
+            }
+            if (sendSources && part.sourceType === "document") {
+              controller.enqueue({
+                type: "source-document",
+                sourceId: part.id,
+                mediaType: part.mediaType,
+                title: part.title,
+                filename: part.filename,
+                ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {}
+              });
+            }
+            break;
+          }
+          case "tool-input-start": {
+            toolNamesByCallId[part.id] = part.toolName;
+            const dynamic = isDynamic(part.id);
+            controller.enqueue({
+              type: "tool-input-start",
+              toolCallId: part.id,
+              toolName: part.toolName,
+              ...part.providerExecuted != null ? { providerExecuted: part.providerExecuted } : {},
+              ...dynamic != null ? { dynamic } : {}
+            });
+            break;
+          }
+          case "tool-input-delta": {
+            controller.enqueue({
+              type: "tool-input-delta",
+              toolCallId: part.id,
+              inputTextDelta: part.delta
+            });
+            break;
+          }
+          case "tool-call": {
+            toolNamesByCallId[part.toolCallId] = part.toolName;
+            const dynamic = isDynamic(part.toolCallId);
+            if (part.invalid) {
+              controller.enqueue({
+                type: "tool-input-error",
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                input: part.input,
+                ...part.providerExecuted != null ? { providerExecuted: part.providerExecuted } : {},
+                ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {},
+                ...dynamic != null ? { dynamic } : {},
+                errorText: onError(part.error)
+              });
+            } else {
+              controller.enqueue({
+                type: "tool-input-available",
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                input: part.input,
+                ...part.providerExecuted != null ? { providerExecuted: part.providerExecuted } : {},
+                ...part.providerMetadata != null ? { providerMetadata: part.providerMetadata } : {},
+                ...dynamic != null ? { dynamic } : {}
+              });
+            }
+            break;
+          }
+          case "tool-result": {
+            const dynamic = isDynamic(part.toolCallId);
+            controller.enqueue({
+              type: "tool-output-available",
+              toolCallId: part.toolCallId,
+              output: part.output,
+              ...part.providerExecuted != null ? { providerExecuted: part.providerExecuted } : {},
+              ...part.preliminary != null ? { preliminary: part.preliminary } : {},
+              ...dynamic != null ? { dynamic } : {}
+            });
+            break;
+          }
+          case "tool-error": {
+            const dynamic = isDynamic(part.toolCallId);
+            controller.enqueue({
+              type: "tool-output-error",
+              toolCallId: part.toolCallId,
+              errorText: onError(part.error),
+              ...part.providerExecuted != null ? { providerExecuted: part.providerExecuted } : {},
+              ...dynamic != null ? { dynamic } : {}
+            });
+            break;
+          }
+          case "error": {
+            controller.enqueue({
+              type: "error",
+              errorText: onError(part.error)
+            });
+            break;
+          }
+          case "start-step": {
+            controller.enqueue({ type: "start-step" });
+            break;
+          }
+          case "finish-step": {
+            controller.enqueue({ type: "finish-step" });
+            break;
+          }
+          case "start": {
+            if (sendStart) {
+              controller.enqueue({
+                type: "start",
+                ...messageMetadataValue != null ? { messageMetadata: messageMetadataValue } : {},
+                ...responseMessageId != null ? { messageId: responseMessageId } : {}
+              });
+            }
+            break;
+          }
+          case "finish": {
+            if (sendFinish) {
+              controller.enqueue({
+                type: "finish",
+                finishReason: part.finishReason,
+                ...messageMetadataValue != null ? { messageMetadata: messageMetadataValue } : {}
+              });
+            }
+            break;
+          }
+          case "abort": {
+            controller.enqueue(part);
+            break;
+          }
+          case "tool-input-end": {
+            break;
+          }
+          case "raw": {
+            break;
+          }
+          default: {
+            const exhaustiveCheck = partType;
+            throw new Error(`Unknown chunk type: ${exhaustiveCheck}`);
+          }
+        }
+        if (messageMetadataValue != null && partType !== "start" && partType !== "finish") {
+          controller.enqueue({
+            type: "message-metadata",
+            messageMetadata: messageMetadataValue
+          });
+        }
+      }
+    }));
+    return createAsyncIterableStream(handleUIMessageStreamFinish({
+      stream: baseStream,
+      messageId: responseMessageId != null ? responseMessageId : generateMessageId == null ? undefined : generateMessageId(),
+      originalMessages,
+      onFinish,
+      onError
+    }));
+  }
+  pipeUIMessageStreamToResponse(response, {
+    originalMessages,
+    generateMessageId,
+    onFinish,
+    messageMetadata,
+    sendReasoning,
+    sendSources,
+    sendFinish,
+    sendStart,
+    onError,
+    ...init
+  } = {}) {
+    pipeUIMessageStreamToResponse({
+      response,
+      stream: this.toUIMessageStream({
+        originalMessages,
+        generateMessageId,
+        onFinish,
+        messageMetadata,
+        sendReasoning,
+        sendSources,
+        sendFinish,
+        sendStart,
+        onError
+      }),
+      ...init
+    });
+  }
+  pipeTextStreamToResponse(response, init) {
+    pipeTextStreamToResponse({
+      response,
+      textStream: this.textStream,
+      ...init
+    });
+  }
+  toUIMessageStreamResponse({
+    originalMessages,
+    generateMessageId,
+    onFinish,
+    messageMetadata,
+    sendReasoning,
+    sendSources,
+    sendFinish,
+    sendStart,
+    onError,
+    ...init
+  } = {}) {
+    return createUIMessageStreamResponse({
+      stream: this.toUIMessageStream({
+        originalMessages,
+        generateMessageId,
+        onFinish,
+        messageMetadata,
+        sendReasoning,
+        sendSources,
+        sendFinish,
+        sendStart,
+        onError
+      }),
+      ...init
+    });
+  }
+  toTextStreamResponse(init) {
+    return createTextStreamResponse({
+      textStream: this.textStream,
+      ...init
+    });
+  }
+};
 function extractReasoningContent(content) {
   const parts = content.filter((content2) => content2.type === "reasoning");
   return parts.length === 0 ? undefined : parts.map((content2) => content2.text).join(`
@@ -43347,12 +45676,12 @@ var OpenRouterChatLanguageModel = class {
       debug: this.settings.debug
     }, this.config.extraBody), this.settings.extraBody);
     if (tools && tools.length > 0) {
-      const mappedTools = tools.filter((tool) => tool.type === "function").map((tool) => ({
+      const mappedTools = tools.filter((tool2) => tool2.type === "function").map((tool2) => ({
         type: "function",
         function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.inputSchema
+          name: tool2.name,
+          description: tool2.description,
+          parameters: tool2.inputSchema
         }
       }));
       return __spreadProps(__spreadValues({}, baseArgs), {
@@ -44465,18 +46794,22 @@ var openrouter = createOpenRouter({
 import {
   EventType
 } from "@elizaos/core";
-import { logger as logger2 } from "@elizaos/core";
 import {
   ModelType as ModelType2,
   logger as logger4
 } from "@elizaos/core";
+import { logger as logger3 } from "@elizaos/core";
 import {
   logger as logger6
 } from "@elizaos/core";
 import { logger as logger5, getGeneratedDir } from "@elizaos/core";
 import { logger as logger7, ModelType as ModelType3, VECTOR_DIMS } from "@elizaos/core";
 function getSetting(runtime2, key, defaultValue) {
-  return runtime2.getSetting(key) ?? process.env[key] ?? defaultValue;
+  const value = runtime2.getSetting(key);
+  if (value !== undefined && value !== null) {
+    return String(value);
+  }
+  return process.env[key] ?? defaultValue;
 }
 function getBaseURL(runtime2) {
   const browserURL = getSetting(runtime2, "OPENROUTER_BROWSER_BASE_URL");
@@ -44506,15 +46839,6 @@ function getEmbeddingModel(runtime2) {
 function shouldAutoCleanupImages(runtime2) {
   const setting = getSetting(runtime2, "OPENROUTER_AUTO_CLEANUP_IMAGES", "false");
   return setting?.toLowerCase() === "true";
-}
-function getToolExecutionMaxSteps(runtime2) {
-  const setting = getSetting(runtime2, "OPENROUTER_TOOL_EXECUTION_MAX_STEPS", "15");
-  const value = parseInt(setting || "15", 10);
-  if (Number.isNaN(value) || value < 1)
-    return 15;
-  if (value > 100)
-    return 100;
-  return value;
 }
 function initializeOpenRouter(_config, runtime2) {
   (async () => {
@@ -44565,6 +46889,8 @@ function emitModelUsageEvent(runtime2, type, prompt, usage) {
   const outputTokens = Number(usage.outputTokens || 0);
   const totalTokens = Number(usage.totalTokens != null ? usage.totalTokens : inputTokens + outputTokens);
   runtime2.emitEvent(EventType.MODEL_USED, {
+    runtime: runtime2,
+    source: "openrouter",
     provider: "openrouter",
     type,
     prompt: truncatedPrompt,
@@ -44574,6 +46900,67 @@ function emitModelUsageEvent(runtime2, type, prompt, usage) {
       total: totalTokens
     }
   });
+}
+function buildGenerateParams(runtime2, modelType, params) {
+  const { prompt, stopSequences = [] } = params;
+  const temperature = params.temperature ?? 0.7;
+  const frequencyPenalty = params.frequencyPenalty ?? 0.7;
+  const presencePenalty = params.presencePenalty ?? 0.7;
+  const resolvedMaxOutput = params.maxOutputTokens ?? params.maxTokens ?? 8192;
+  const openrouter2 = createOpenRouterProvider(runtime2);
+  const modelName = modelType === ModelType.TEXT_SMALL ? getSmallModel(runtime2) : getLargeModel(runtime2);
+  const modelLabel = modelType === ModelType.TEXT_SMALL ? "TEXT_SMALL" : "TEXT_LARGE";
+  const generateParams = {
+    model: openrouter2.chat(modelName),
+    prompt,
+    system: runtime2.character.system ?? undefined,
+    temperature,
+    frequencyPenalty,
+    presencePenalty,
+    stopSequences
+  };
+  generateParams.maxOutputTokens = resolvedMaxOutput;
+  return { generateParams, modelName, modelLabel, prompt };
+}
+function handleStreamingGeneration(runtime2, modelType, generateParams, prompt, modelLabel) {
+  logger2.debug(`[OpenRouter] Streaming text with ${modelLabel} model`);
+  const streamResult = streamText(generateParams);
+  return {
+    textStream: streamResult.textStream,
+    text: streamResult.text,
+    usage: streamResult.usage.then((usage) => {
+      if (usage) {
+        emitModelUsageEvent(runtime2, modelType, prompt, usage);
+        const inputTokens = usage.inputTokens ?? 0;
+        const outputTokens = usage.outputTokens ?? 0;
+        return {
+          promptTokens: inputTokens,
+          completionTokens: outputTokens,
+          totalTokens: inputTokens + outputTokens
+        };
+      }
+      return;
+    }),
+    finishReason: streamResult.finishReason
+  };
+}
+async function generateTextWithModel(runtime2, modelType, params) {
+  const { generateParams, modelName, modelLabel, prompt } = buildGenerateParams(runtime2, modelType, params);
+  logger2.debug(`[OpenRouter] Generating text with ${modelLabel} model: ${modelName}`);
+  if (params.stream) {
+    return handleStreamingGeneration(runtime2, modelType, generateParams, prompt, modelLabel);
+  }
+  const response = await generateText(generateParams);
+  if (response.usage) {
+    emitModelUsageEvent(runtime2, modelType, prompt, response.usage);
+  }
+  return response.text;
+}
+async function handleTextSmall(runtime2, params) {
+  return generateTextWithModel(runtime2, ModelType.TEXT_SMALL, params);
+}
+async function handleTextLarge(runtime2, params) {
+  return generateTextWithModel(runtime2, ModelType.TEXT_LARGE, params);
 }
 function getJsonRepairFunction() {
   return async ({ text: text2, error }) => {
@@ -44586,16 +46973,10 @@ function getJsonRepairFunction() {
       return null;
     } catch (jsonError) {
       const message = jsonError instanceof Error ? jsonError.message : String(jsonError);
-      logger2.warn(`Failed to repair JSON text: ${message}`);
+      logger3.warn(`Failed to repair JSON text: ${message}`);
       return null;
     }
   };
-}
-function handleEmptyToolResponse(modelType) {
-  logger2.warn(`[${modelType}] No text generated after tool execution`);
-  const fallbackText = "I executed the requested action. The tool completed successfully.";
-  logger2.warn(`[${modelType}] Using fallback response text`);
-  return fallbackText;
 }
 function parseImageDescriptionResponse(responseText) {
   try {
@@ -44604,7 +46985,7 @@ function parseImageDescriptionResponse(responseText) {
       return jsonResponse;
     }
   } catch (e) {
-    logger2.debug(`Parsing as JSON failed, processing as text: ${e}`);
+    logger3.debug(`Parsing as JSON failed, processing as text: ${e}`);
   }
   const titleMatch = responseText.match(/title[:\s]+(.+?)(?:\n|$)/i);
   const title = titleMatch?.[1]?.trim() || "Image Analysis";
@@ -44613,7 +46994,7 @@ function parseImageDescriptionResponse(responseText) {
 }
 async function handleObjectGenerationError(error) {
   if (error instanceof JSONParseError) {
-    logger2.error(`[generateObject] Failed to parse JSON: ${error.message}`);
+    logger3.error(`[generateObject] Failed to parse JSON: ${error.message}`);
     const repairFunction = getJsonRepairFunction();
     const repairedJsonString = await repairFunction({
       text: error.text,
@@ -44622,141 +47003,26 @@ async function handleObjectGenerationError(error) {
     if (repairedJsonString) {
       try {
         const repairedObject = JSON.parse(repairedJsonString);
-        logger2.log("[generateObject] Successfully repaired JSON.");
+        logger3.log("[generateObject] Successfully repaired JSON.");
         return repairedObject;
       } catch (repairParseError) {
         const message = repairParseError instanceof Error ? repairParseError.message : String(repairParseError);
-        logger2.error(`[generateObject] Failed to parse repaired JSON: ${message}`);
+        logger3.error(`[generateObject] Failed to parse repaired JSON: ${message}`);
         if (repairParseError instanceof Error)
           throw repairParseError;
         throw Object.assign(new Error(message), { cause: repairParseError });
       }
     } else {
-      logger2.error("[generateObject] JSON repair failed.");
+      logger3.error("[generateObject] JSON repair failed.");
       throw error;
     }
   } else {
     const message = error instanceof Error ? error.message : String(error);
-    logger2.error(`[generateObject] Unknown error: ${message}`);
+    logger3.error(`[generateObject] Unknown error: ${message}`);
     if (error instanceof Error)
       throw error;
     throw Object.assign(new Error(message), { cause: error });
   }
-}
-function isLikelyBase64(key, value) {
-  const base64KeyPattern = /^(data|content|body|payload|encoded|b64|base64|document)$/i;
-  if (!base64KeyPattern.test(key))
-    return false;
-  if (value.length < 20 || value.length > 1024 * 1024)
-    return false;
-  if (value.length % 4 !== 0)
-    return false;
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value))
-    return false;
-  return true;
-}
-function decodeBase64Fields(obj, depth = 0) {
-  if (depth > 5)
-    return obj;
-  if (!obj || typeof obj !== "object")
-    return obj;
-  if (Array.isArray(obj))
-    return obj.map((item) => decodeBase64Fields(item, depth + 1));
-  const decoded = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === "string" && isLikelyBase64(key, value)) {
-      try {
-        decoded[key] = Buffer.from(value, "base64").toString("utf8");
-        logger2.debug(`[decodeBase64] Decoded field '${key}' (${value.length} chars)`);
-      } catch (error) {
-        logger2.warn(`[decodeBase64] Failed to decode field '${key}': ${error}`);
-        decoded[key] = value;
-      }
-    } else if (value && typeof value === "object") {
-      decoded[key] = decodeBase64Fields(value, depth + 1);
-    } else {
-      decoded[key] = value;
-    }
-  }
-  return decoded;
-}
-async function generateTextWithModel(runtime2, modelType, params) {
-  const { prompt, stopSequences = [], tools, toolChoice } = params;
-  const temperature = params.temperature ?? 0.7;
-  const frequencyPenalty = params.frequencyPenalty ?? 0.7;
-  const presencePenalty = params.presencePenalty ?? 0.7;
-  const resolvedMaxOutput = params.maxOutputTokens ?? params.maxTokens ?? 8192;
-  const openrouter2 = createOpenRouterProvider(runtime2);
-  const modelName = modelType === ModelType.TEXT_SMALL ? getSmallModel(runtime2) : getLargeModel(runtime2);
-  const modelLabel = modelType === ModelType.TEXT_SMALL ? "TEXT_SMALL" : "TEXT_LARGE";
-  logger3.debug(`[OpenRouter] Generating text with ${modelLabel} model: ${modelName}`);
-  const generateParams = {
-    model: openrouter2.chat(modelName),
-    prompt,
-    system: runtime2.character.system ?? undefined,
-    temperature,
-    frequencyPenalty,
-    presencePenalty,
-    stopSequences
-  };
-  generateParams.maxOutputTokens = resolvedMaxOutput;
-  if (tools) {
-    generateParams.tools = tools;
-    const maxSteps = getToolExecutionMaxSteps(runtime2);
-    generateParams.stopWhen = stepCountIs(maxSteps);
-    logger3.debug(`[OpenRouter] Using maxSteps: ${maxSteps} for tool execution`);
-  }
-  if (toolChoice) {
-    generateParams.toolChoice = toolChoice;
-  }
-  let capturedToolResults = [];
-  let capturedToolCalls = [];
-  if (tools) {
-    generateParams.onStepFinish = async (stepResult) => {
-      if (stepResult.toolCalls && stepResult.toolCalls.length > 0) {
-        capturedToolCalls = [
-          ...capturedToolCalls,
-          ...stepResult.toolCalls
-        ];
-      }
-      if (stepResult.content && Array.isArray(stepResult.content)) {
-        const toolResultsFromContent = stepResult.content.filter((content) => content.type === "tool-result" && content.output).map((content) => ({
-          toolCallId: content.toolCallId,
-          result: decodeBase64Fields(content.output)
-        }));
-        if (toolResultsFromContent.length > 0) {
-          capturedToolResults = [...capturedToolResults, ...toolResultsFromContent];
-        }
-      }
-    };
-  }
-  const response = await generateText(generateParams);
-  let responseText;
-  if (tools && (!response.text || response.text.trim() === "" || response.text === "Tools executed successfully.")) {
-    responseText = handleEmptyToolResponse(modelLabel);
-  } else {
-    responseText = response.text;
-  }
-  if (response.usage) {
-    emitModelUsageEvent(runtime2, modelType, prompt, response.usage);
-  }
-  if (tools && response.steps && response.steps.length > 0) {
-    return {
-      text: responseText,
-      toolCalls: capturedToolCalls,
-      toolResults: capturedToolResults,
-      steps: response.steps,
-      usage: response.usage,
-      finishReason: response.finishReason
-    };
-  }
-  return responseText;
-}
-async function handleTextSmall(runtime2, params) {
-  return generateTextWithModel(runtime2, ModelType.TEXT_SMALL, params);
-}
-async function handleTextLarge(runtime2, params) {
-  return generateTextWithModel(runtime2, ModelType.TEXT_LARGE, params);
 }
 async function generateObjectWithModel(runtime2, modelType, params) {
   const openrouter2 = createOpenRouterProvider(runtime2);
@@ -44767,7 +47033,7 @@ async function generateObjectWithModel(runtime2, modelType, params) {
   try {
     const { object: object2, usage } = await generateObject({
       model: openrouter2.chat(modelName),
-      ...params.schema && { schema: params.schema },
+      ...params.schema && { schema: jsonSchema(params.schema) },
       output: params.schema ? "object" : "no-schema",
       prompt: params.prompt,
       temperature,
@@ -45124,14 +47390,134 @@ var openrouterPlugin = {
     [ModelType4.TEXT_EMBEDDING]: async (runtime2, params) => {
       return handleTextEmbedding(runtime2, params);
     }
-  }
+  },
+  tests: [
+    {
+      name: "openrouter_plugin_tests",
+      tests: [
+        {
+          name: "openrouter_test_text_small",
+          fn: async (runtime2) => {
+            try {
+              const text2 = await runtime2.useModel(ModelType4.TEXT_SMALL, {
+                prompt: "What is the nature of reality in 10 words?"
+              });
+              if (text2.length === 0) {
+                throw new Error("Failed to generate text");
+              }
+              logger8.log({ text: text2 }, "generated with test_text_small");
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              logger8.error(`Error in test_text_small: ${message}`);
+              throw error;
+            }
+          }
+        },
+        {
+          name: "openrouter_test_text_large",
+          fn: async (runtime2) => {
+            try {
+              const text2 = await runtime2.useModel(ModelType4.TEXT_LARGE, {
+                prompt: "What is the nature of reality in 10 words?"
+              });
+              if (text2.length === 0) {
+                throw new Error("Failed to generate text");
+              }
+              logger8.log({ text: text2 }, "generated with test_text_large");
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              logger8.error(`Error in test_text_large: ${message}`);
+              throw error;
+            }
+          }
+        },
+        {
+          name: "openrouter_test_text_generation_large",
+          fn: async (runtime2) => {
+            try {
+              const result = await runtime2.useModel(ModelType4.TEXT_LARGE, {
+                prompt: "Say hello in 5 words."
+              });
+              if (!result || result.length === 0) {
+                throw new Error("Text generation returned empty result");
+              }
+              logger8.log({ result }, "Text generation test completed");
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              logger8.error(`Error in openrouter_test_text_generation_large: ${message}`);
+              throw error;
+            }
+          }
+        },
+        {
+          name: "openrouter_test_streaming",
+          fn: async (runtime2) => {
+            try {
+              const chunks = [];
+              const result = await runtime2.useModel(ModelType4.TEXT_LARGE, {
+                prompt: "Count from 1 to 5.",
+                onStreamChunk: (chunk) => {
+                  chunks.push(chunk);
+                }
+              });
+              if (!result || result.length === 0) {
+                throw new Error("Streaming returned empty result");
+              }
+              if (chunks.length === 0) {
+                throw new Error("No streaming chunks received");
+              }
+              logger8.log({ chunks: chunks.length, result: result.substring(0, 50) }, "Streaming test completed");
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              logger8.error(`Error in openrouter_test_streaming: ${message}`);
+              throw error;
+            }
+          }
+        },
+        {
+          name: "openrouter_test_object_small",
+          fn: async (runtime2) => {
+            try {
+              const result = await runtime2.useModel(ModelType4.OBJECT_SMALL, {
+                prompt: "Create a simple JSON object with a message field saying hello",
+                schema: { type: "object" }
+              });
+              logger8.log({ result }, "Generated object with test_object_small");
+              if (!result || typeof result === "object" && "error" in result) {
+                throw new Error("Failed to generate object");
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              logger8.error(`Error in test_object_small: ${message}`);
+              throw error;
+            }
+          }
+        },
+        {
+          name: "openrouter_test_text_embedding",
+          fn: async (runtime2) => {
+            try {
+              const embedding = await runtime2.useModel(ModelType4.TEXT_EMBEDDING, {
+                text: "Hello, world!"
+              });
+              logger8.log({ embedding }, "embedding");
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              logger8.error(`Error in test_text_embedding: ${message}`);
+              throw error;
+            }
+          }
+        }
+      ]
+    }
+  ]
 };
 var src_default = openrouterPlugin;
 
 // node_modules/@elizaos/plugin-mcp/dist/index.js
 var import_ajv2 = __toESM(require_ajv(), 1);
 var import_json5 = __toESM(require_lib(), 1);
-import { logger as logger8 } from "@elizaos/core";
+import { logger as logger82 } from "@elizaos/core";
 import {
   logger as logger52
 } from "@elizaos/core";
@@ -47468,17 +49854,17 @@ class Client2 extends Protocol {
     this._cachedToolOutputValidators.clear();
     this._cachedKnownTaskTools.clear();
     this._cachedRequiredTaskTools.clear();
-    for (const tool of tools) {
-      if (tool.outputSchema) {
-        const toolValidator = this._jsonSchemaValidator.getValidator(tool.outputSchema);
-        this._cachedToolOutputValidators.set(tool.name, toolValidator);
+    for (const tool2 of tools) {
+      if (tool2.outputSchema) {
+        const toolValidator = this._jsonSchemaValidator.getValidator(tool2.outputSchema);
+        this._cachedToolOutputValidators.set(tool2.name, toolValidator);
       }
-      const taskSupport = tool.execution?.taskSupport;
+      const taskSupport = tool2.execution?.taskSupport;
       if (taskSupport === "required" || taskSupport === "optional") {
-        this._cachedKnownTaskTools.add(tool.name);
+        this._cachedKnownTaskTools.add(tool2.name);
       }
       if (taskSupport === "required") {
-        this._cachedRequiredTaskTools.add(tool.name);
+        this._cachedRequiredTaskTools.add(tool2.name);
       }
     }
   }
@@ -49664,12 +52050,12 @@ function buildMcpProviderData(servers) {
       textContent += `### Tools:
 
 `;
-      for (const tool of server.tools) {
-        mcpData[server.name].tools[tool.name] = {
-          description: tool.description || "No description available",
-          inputSchema: tool.inputSchema || {}
+      for (const tool2 of server.tools) {
+        mcpData[server.name].tools[tool2.name] = {
+          description: tool2.description || "No description available",
+          inputSchema: tool2.inputSchema || {}
         };
-        textContent += `- **${tool.name}**: ${tool.description || "No description available"}
+        textContent += `- **${tool2.name}**: ${tool2.description || "No description available"}
 `;
       }
       textContent += `
@@ -49950,9 +52336,10 @@ ${JSON.stringify(parsedJson, null, 2)}`);
 }
 function getMaxRetries(runtime2) {
   try {
-    const settings = runtime2.getSetting("mcp");
-    if (settings && "maxRetries" in settings && settings.maxRetries !== undefined) {
-      const configValue = Number(settings.maxRetries);
+    const rawSettings = runtime2.getSetting("mcp");
+    const settings = rawSettings;
+    if (settings && typeof settings.maxRetries === "number") {
+      const configValue = settings.maxRetries;
       if (!Number.isNaN(configValue) && configValue >= 0) {
         logger32.debug(`[WITH-MODEL-RETRY] Using configured selection retries: ${configValue}`);
         return configValue;
@@ -50248,10 +52635,10 @@ function createToolSelectionFeedbackPrompt(originalResponse, errorMessage, state
   for (const [serverName, server] of Object.entries(state.values.mcp || {})) {
     if (server.status !== "connected")
       continue;
-    for (const [toolName, tool] of Object.entries(server.tools || {})) {
+    for (const [toolName, tool2] of Object.entries(server.tools || {})) {
       toolsDescription += `Tool: ${toolName} (Server: ${serverName})
 `;
-      toolsDescription += `Description: ${tool.description || "No description available"}
+      toolsDescription += `Description: ${tool2.description || "No description available"}
 
 `;
     }
@@ -50711,16 +53098,17 @@ class McpService extends Service {
     }
   }
   getMcpSettings() {
-    let settings = this.runtime.getSetting("mcp");
-    logger72.info(`[McpService] getSetting("mcp") result: type=${typeof settings} isNull=${settings === null} hasServers=${!!settings?.servers}`);
-    if (!settings || typeof settings === "object" && !settings.servers) {
+    const rawSettings = this.runtime.getSetting("mcp");
+    let settings = rawSettings;
+    logger72.info(`[McpService] getSetting("mcp") result: type=${typeof rawSettings} isNull=${rawSettings === null} hasServers=${!!settings?.servers}`);
+    if (!settings || !settings.servers) {
       const characterSettings = this.runtime.character?.settings;
       if (characterSettings?.mcp) {
         logger72.info("[McpService] Found MCP settings in character.settings.mcp (fallback)");
         settings = characterSettings.mcp;
       }
     }
-    if (!settings || typeof settings === "object" && !settings.servers) {
+    if (!settings || !settings.servers) {
       const runtimeSettings = this.runtime.settings;
       if (runtimeSettings?.mcp) {
         logger72.info("[McpService] Found MCP settings in runtime.settings.mcp (fallback)");
@@ -50974,24 +53362,24 @@ ${error}` : error;
         return [];
       }
       const response = await connection.client.listTools();
-      const tools = (response?.tools || []).map((tool) => {
-        let processedTool = { ...tool };
-        if (tool.inputSchema) {
+      const tools = (response?.tools || []).map((tool2) => {
+        let processedTool = { ...tool2 };
+        if (tool2.inputSchema) {
           try {
             if (!this.compatibilityInitialized) {
               this.initializeToolCompatibility();
             }
-            processedTool.inputSchema = this.applyToolCompatibility(tool.inputSchema);
-            logger72.debug(`Applied tool compatibility for: ${tool.name} on server: ${serverName}`);
+            processedTool.inputSchema = this.applyToolCompatibility(tool2.inputSchema);
+            logger72.debug(`Applied tool compatibility for: ${tool2.name} on server: ${serverName}`);
           } catch (error) {
-            logger72.warn({ error, toolName: tool.name, serverName }, `Tool compatibility failed for ${tool.name} on ${serverName}`);
+            logger72.warn({ error, toolName: tool2.name, serverName }, `Tool compatibility failed for ${tool2.name} on ${serverName}`);
           }
         }
         return processedTool;
       });
       logger72.info(`Fetched ${tools.length} tools for ${serverName}`);
-      for (const tool of tools) {
-        logger72.info(`[${serverName}] ${tool.name}: ${tool.description}`);
+      for (const tool2 of tools) {
+        logger72.info(`[${serverName}] ${tool2.name}: ${tool2.description}`);
       }
       return tools;
     } catch (error) {
@@ -51109,7 +53497,7 @@ var mcpPlugin = {
   name: "mcp",
   description: "Plugin for connecting to MCP (Model Context Protocol) servers",
   init: async (_config, _runtime) => {
-    logger8.info("Initializing MCP plugin...");
+    logger82.info("Initializing MCP plugin...");
   },
   services: [McpService],
   actions: [callToolAction, readResourceAction],
@@ -56771,7 +59159,7 @@ computeHmac.register = function(func) {
 };
 Object.freeze(computeHmac);
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/_assert.js
+// node_modules/@noble/hashes/esm/_assert.js
 function number4(n) {
   if (!Number.isSafeInteger(n) || n < 0)
     throw new Error(`Wrong positive integer: ${n}`);
@@ -56802,7 +59190,7 @@ function output(out, instance) {
   }
 }
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/_u64.js
+// node_modules/@noble/hashes/esm/_u64.js
 var U32_MASK64 = /* @__PURE__ */ BigInt(2 ** 32 - 1);
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -56824,11 +59212,11 @@ var rotlSL = (h, l, s) => l << s | h >>> 32 - s;
 var rotlBH = (h, l, s) => l << s - 32 | h >>> 64 - s;
 var rotlBL = (h, l, s) => h << s - 32 | l >>> 64 - s;
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/cryptoNode.js
+// node_modules/@noble/hashes/esm/cryptoNode.js
 import * as nc from "node:crypto";
 var crypto3 = nc && typeof nc === "object" && "webcrypto" in nc ? nc.webcrypto : undefined;
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/utils.js
+// node_modules/@noble/hashes/esm/utils.js
 /*! noble-hashes - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 var u8a = (a) => a instanceof Uint8Array;
 var u32 = (arr) => new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
@@ -56908,7 +59296,7 @@ function randomBytes2(bytesLength = 32) {
   throw new Error("crypto.getRandomValues must be defined");
 }
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/sha3.js
+// node_modules/@noble/hashes/esm/sha3.js
 var [SHA3_PI, SHA3_ROTL, _SHA3_IOTA] = [[], [], []];
 var _0n = /* @__PURE__ */ BigInt(0);
 var _1n = /* @__PURE__ */ BigInt(1);
@@ -57110,7 +59498,7 @@ keccak256.register = function(func) {
 };
 Object.freeze(keccak256);
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/_sha2.js
+// node_modules/@noble/hashes/esm/_sha2.js
 function setBigUint64(view, byteOffset, value, isLE2) {
   if (typeof view.setBigUint64 === "function")
     return view.setBigUint64(byteOffset, value, isLE2);
@@ -57211,7 +59599,7 @@ class SHA2 extends Hash {
   }
 }
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/ripemd160.js
+// node_modules/@noble/hashes/esm/ripemd160.js
 var Rho = /* @__PURE__ */ new Uint8Array([7, 4, 13, 1, 10, 6, 15, 3, 12, 0, 9, 5, 2, 14, 11, 8]);
 var Id = /* @__PURE__ */ Uint8Array.from({ length: 16 }, (_, i) => i);
 var Pi = /* @__PURE__ */ Id.map((i) => (9 * i + 5) % 16);
@@ -57375,7 +59763,7 @@ randomBytes3.register = function(func) {
 };
 Object.freeze(randomBytes3);
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/sha256.js
+// node_modules/@noble/hashes/esm/sha256.js
 var Chi = (a, b, c) => a & b ^ ~a & c;
 var Maj = (a, b, c) => a & b ^ a & c ^ b & c;
 var SHA256_K = /* @__PURE__ */ new Uint32Array([
@@ -57527,7 +59915,7 @@ class SHA256 extends SHA2 {
 }
 var sha256 = /* @__PURE__ */ wrapConstructor(() => new SHA256);
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/hmac.js
+// node_modules/@noble/hashes/esm/hmac.js
 class HMAC extends Hash {
   constructor(hash2, _key) {
     super();
@@ -57592,7 +59980,7 @@ class HMAC extends Hash {
 var hmac = (hash2, key, message) => new HMAC(hash2, key).update(message).digest();
 hmac.create = (hash2, key) => new HMAC(hash2, key);
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/pbkdf2.js
+// node_modules/@noble/hashes/esm/pbkdf2.js
 function pbkdf2Init(hash2, _password, _salt, _opts) {
   hash(hash2);
   const opts = checkOpts({ dkLen: 32, asyncTick: 10 }, _opts);
@@ -57637,7 +60025,7 @@ function pbkdf22(hash2, password, salt, opts) {
   return pbkdf2Output(PRF, PRFSalt, DK, prfW, u);
 }
 
-// node_modules/ethers/node_modules/@noble/hashes/esm/scrypt.js
+// node_modules/@noble/hashes/esm/scrypt.js
 var rotl2 = (a, b) => a << b | a >>> 32 - b;
 function XorAndSalsa(prev, pi, input, ii, out, oi) {
   let y00 = prev[pi++] ^ input[ii++], y01 = prev[pi++] ^ input[ii++];
@@ -57898,7 +60286,7 @@ sha512.register = function(func) {
 };
 Object.freeze(sha2562);
 
-// node_modules/ethers/node_modules/@noble/curves/esm/abstract/utils.js
+// node_modules/@noble/curves/esm/abstract/utils.js
 var exports_utils = {};
 __export(exports_utils, {
   validateObject: () => validateObject,
@@ -58114,7 +60502,7 @@ function validateObject(object7, validators, optValidators = {}) {
   return object7;
 }
 
-// node_modules/ethers/node_modules/@noble/curves/esm/abstract/modular.js
+// node_modules/@noble/curves/esm/abstract/modular.js
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 var _0n3 = BigInt(0);
 var _1n3 = BigInt(1);
@@ -58377,7 +60765,7 @@ function mapHashToField(key, fieldOrder, isLE2 = false) {
   return isLE2 ? numberToBytesLE(reduced, fieldLen) : numberToBytesBE(reduced, fieldLen);
 }
 
-// node_modules/ethers/node_modules/@noble/curves/esm/abstract/curve.js
+// node_modules/@noble/curves/esm/abstract/curve.js
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 var _0n4 = BigInt(0);
 var _1n4 = BigInt(1);
@@ -58478,7 +60866,7 @@ function validateBasic(curve) {
   });
 }
 
-// node_modules/ethers/node_modules/@noble/curves/esm/abstract/weierstrass.js
+// node_modules/@noble/curves/esm/abstract/weierstrass.js
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 function validatePointOpts(curve) {
   const opts = validateBasic(curve);
@@ -59202,7 +61590,7 @@ function weierstrass(curveDef) {
   };
 }
 
-// node_modules/ethers/node_modules/@noble/curves/esm/_shortw_utils.js
+// node_modules/@noble/curves/esm/_shortw_utils.js
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 function getHash(hash2) {
   return {
@@ -59216,7 +61604,7 @@ function createCurve(curveDef, defHash) {
   return Object.freeze({ ...create(defHash), create });
 }
 
-// node_modules/ethers/node_modules/@noble/curves/esm/secp256k1.js
+// node_modules/@noble/curves/esm/secp256k1.js
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 var secp256k1P = BigInt("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f");
 var secp256k1N = BigInt("0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
@@ -71403,7 +73791,7 @@ class FallbackProvider extends AbstractProvider {
       perform: null,
       staller: null
     };
-    const now = getTime3();
+    const now2 = getTime3();
     runner.perform = (async () => {
       try {
         config.requests++;
@@ -71413,7 +73801,7 @@ class FallbackProvider extends AbstractProvider {
         config.errorResponses++;
         runner.result = { error };
       }
-      const dt = getTime3() - now;
+      const dt = getTime3() - now2;
       config._totalTime += dt;
       config.rollingDuration = 0.95 * config.rollingDuration + 0.05 * dt;
       runner.perform = null;
@@ -73051,8 +75439,8 @@ function _encryptKeystore(key, kdf, account, options) {
     const mnemonicIv = randomBytes3(16);
     const mnemonicAesCtr = new CTR(mnemonicKey, mnemonicIv);
     const mnemonicCiphertext = getBytes(mnemonicAesCtr.encrypt(entropy));
-    const now = new Date;
-    const timestamp = now.getUTCFullYear() + "-" + zpad(now.getUTCMonth() + 1, 2) + "-" + zpad(now.getUTCDate(), 2) + "T" + zpad(now.getUTCHours(), 2) + "-" + zpad(now.getUTCMinutes(), 2) + "-" + zpad(now.getUTCSeconds(), 2) + ".0Z";
+    const now2 = new Date;
+    const timestamp = now2.getUTCFullYear() + "-" + zpad(now2.getUTCMonth() + 1, 2) + "-" + zpad(now2.getUTCDate(), 2) + "T" + zpad(now2.getUTCHours(), 2) + "-" + zpad(now2.getUTCMinutes(), 2) + "-" + zpad(now2.getUTCSeconds(), 2) + ".0Z";
     const gethFilename = "UTC--" + timestamp + "--" + data.address;
     data["x-ethers"] = {
       client,
@@ -74963,11 +77351,332 @@ var x402Plugin = {
   }
 };
 
+// src/agent-comm-plugin.ts
+import {
+  logger as logger19
+} from "@elizaos/core";
+var CONFIG2 = {
+  get ELIZA_CLOUD_API_URL() {
+    return process.env.ELIZA_CLOUD_API_URL || "";
+  },
+  get ELIZA_CLOUD_AGENT_ID() {
+    return process.env.ELIZA_CLOUD_AGENT_ID || "coo-cloud";
+  },
+  API_TIMEOUT: 30000,
+  PROTOCOL: "dwebxr-agent-comm"
+};
+async function sendToElizaCloud(message, agentName) {
+  const apiUrl = `${CONFIG2.ELIZA_CLOUD_API_URL}/api/agents/${CONFIG2.ELIZA_CLOUD_AGENT_ID}/message`;
+  logger19.info(`[AGENT_COMM:${agentName}] Sending message to Eliza Cloud: ${apiUrl}`);
+  logger19.info(`[AGENT_COMM:${agentName}] Message type: ${message.type}, content: ${message.content.substring(0, 100)}...`);
+  try {
+    const controller = new AbortController;
+    const timeoutId = setTimeout(() => controller.abort(), CONFIG2.API_TIMEOUT);
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Agent-Protocol": CONFIG2.PROTOCOL,
+        "X-Agent-From": agentName
+      },
+      body: JSON.stringify(message),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger19.error(`[AGENT_COMM:${agentName}] API error: ${response.status} - ${errorText}`);
+      return {
+        success: false,
+        error: `API error: ${response.status}`
+      };
+    }
+    const data4 = await response.json();
+    logger19.info(`[AGENT_COMM:${agentName}] Received response from Eliza Cloud`);
+    return {
+      success: true,
+      message: data4.text || data4.message,
+      data: data4
+    };
+  } catch (error) {
+    if (error.name === "AbortError") {
+      logger19.error(`[AGENT_COMM:${agentName}] Request timeout after ${CONFIG2.API_TIMEOUT}ms`);
+      return {
+        success: false,
+        error: "Request timeout - Eliza Cloud did not respond in time"
+      };
+    }
+    logger19.error(`[AGENT_COMM:${agentName}] Network error:`, error);
+    return {
+      success: false,
+      error: `Network error: ${error.message}`
+    };
+  }
+}
+function isElizaCloudRequest(text2) {
+  const lowerText = text2.toLowerCase();
+  const directMention = lowerText.includes("eliza cloud") || lowerText.includes("elizacloud") || lowerText.includes("cloud coo") || lowerText.includes("クラウドcoo") || lowerText.includes("クラウド coo") || lowerText.includes("eliza クラウド");
+  if (directMention) {
+    return true;
+  }
+  const hasCloudContext = lowerText.includes("cloud") || lowerText.includes("クラウド") || lowerText.includes("remote") || lowerText.includes("リモート") || lowerText.includes("外部") || lowerText.includes("連携");
+  const hasDataRequest = lowerText.includes("market data") || lowerText.includes("マーケットデータ") || lowerText.includes("市場データ") || lowerText.includes("ガス代") || lowerText.includes("gas fee") || lowerText.includes("real-time") || lowerText.includes("リアルタイム");
+  const hasFetchIntent = lowerText.includes("から") && hasDataRequest || lowerText.includes("from") && hasDataRequest || lowerText.includes("取得して") || lowerText.includes("確認して");
+  return hasCloudContext && hasDataRequest || hasFetchIntent && hasCloudContext;
+}
+var queryElizaCloudAction = {
+  name: "QUERY_ELIZA_CLOUD",
+  similes: [
+    "ASK_ELIZA_CLOUD",
+    "ELIZA_CLOUD_QUERY",
+    "GET_MARKET_DATA",
+    "GET_GAS_ESTIMATE",
+    "CLOUD_COO_QUERY"
+  ],
+  description: `Query Eliza Cloud Coo for real-time market data, gas estimates, or other operational information.
+Use this when users ask about:
+- Real-time price data or market conditions
+- Gas fee estimates
+- On-chain operation preparation
+- Market analysis that requires live data`,
+  validate: async (runtime2, message, _state) => {
+    const agentName = runtime2.character?.name || "unknown";
+    const text2 = (message.content.text || "").toLowerCase();
+    const shouldQuery = isElizaCloudRequest(text2);
+    if (shouldQuery) {
+      logger19.info(`[QUERY_ELIZA_CLOUD:${agentName}] Detected Eliza Cloud request: "${text2.substring(0, 50)}..."`);
+    }
+    return shouldQuery;
+  },
+  handler: async (runtime2, message, _state, _options, callback, _responses) => {
+    const agentName = runtime2.character?.name || "unknown";
+    const userText = message.content.text || "";
+    logger19.info(`[QUERY_ELIZA_CLOUD:${agentName}] Processing query: "${userText.substring(0, 100)}..."`);
+    const agentMessage = {
+      protocol: CONFIG2.PROTOCOL,
+      from: agentName,
+      to: "Eliza Cloud Coo",
+      type: "query",
+      content: userText,
+      metadata: {
+        roomId: message.roomId,
+        userId: message.userId || message.authorId
+      },
+      timestamp: new Date().toISOString()
+    };
+    if (!CONFIG2.ELIZA_CLOUD_API_URL) {
+      logger19.warn(`[QUERY_ELIZA_CLOUD:${agentName}] ELIZA_CLOUD_API_URL not configured`);
+      await callback({
+        text: `\uD83D\uDCE1 Eliza Cloud Cooへのクエリを準備しています...
+
+⚠️ 現在、Eliza Cloud APIが設定されていません。管理者にELIZA_CLOUD_API_URL環境変数の設定を依頼してください。
+
+お問い合わせ内容: "${userText.substring(0, 100)}..."`,
+        source: message.content.source
+      });
+      return { success: false };
+    }
+    await callback({
+      text: `\uD83D\uDCE1 Eliza Cloud Cooにクエリを送信中...
+
+お問い合わせ内容: "${userText.substring(0, 100)}..."`,
+      source: message.content.source
+    });
+    const response = await sendToElizaCloud(agentMessage, agentName);
+    if (response.success) {
+      await callback({
+        text: `✅ **Eliza Cloud Cooからの応答**
+
+${response.message || "データを受信しました。"}${response.data?.analysis ? `
+
+\uD83D\uDCCA 分析:
+${response.data.analysis}` : ""}`,
+        source: message.content.source
+      });
+      return { success: true };
+    } else {
+      await callback({
+        text: `⚠️ Eliza Cloud Cooへの接続に問題が発生しました。
+
+エラー: ${response.error}
+
+後でもう一度お試しください。`,
+        source: message.content.source
+      });
+      return { success: false };
+    }
+  },
+  examples: [
+    [
+      {
+        name: "{{user1}}",
+        content: {
+          text: "Get me the current ETH gas fees from Eliza Cloud"
+        }
+      },
+      {
+        name: "{{agent}}",
+        content: {
+          text: "\uD83D\uDCE1 Eliza Cloud Cooにガス代の情報をリクエストしています..."
+        }
+      }
+    ],
+    [
+      {
+        name: "{{user1}}",
+        content: {
+          text: "リアルタイムのUSDC/JPY価格を教えて"
+        }
+      },
+      {
+        name: "{{agent}}",
+        content: {
+          text: "\uD83D\uDCE1 Eliza Cloud Cooにマーケットデータをリクエストしています..."
+        }
+      }
+    ]
+  ]
+};
+var sendInstructionAction = {
+  name: "SEND_CLOUD_INSTRUCTION",
+  similes: [
+    "INSTRUCT_ELIZA_CLOUD",
+    "CLOUD_OPERATION",
+    "PREPARE_OPERATION"
+  ],
+  description: `Send operational instructions to Eliza Cloud Coo for operation preparation.
+Only available for Dliza (Commander). Use for:
+- Preparing swap/trade operations
+- Setting up wallet operation parameters
+- Coordinating multi-step operations`,
+  validate: async (runtime2, message, _state) => {
+    const agentName = runtime2.character?.name || "unknown";
+    if (agentName !== "Dliza") {
+      return false;
+    }
+    const text2 = (message.content.text || "").toLowerCase();
+    const isOperationRequest = text2.includes("prepare") || text2.includes("準備") || text2.includes("swap") || text2.includes("スワップ") || text2.includes("execute") || text2.includes("実行") || text2.includes("operation") || text2.includes("オペレーション");
+    return isOperationRequest && isElizaCloudRequest(text2);
+  },
+  handler: async (runtime2, message, _state, _options, callback, _responses) => {
+    const agentName = runtime2.character?.name || "unknown";
+    const userText = message.content.text || "";
+    logger19.info(`[SEND_INSTRUCTION:${agentName}] Sending instruction: "${userText.substring(0, 100)}..."`);
+    const agentMessage = {
+      protocol: CONFIG2.PROTOCOL,
+      from: agentName,
+      to: "Eliza Cloud Coo",
+      type: "instruction",
+      content: userText,
+      metadata: {
+        priority: "high",
+        roomId: message.roomId
+      },
+      timestamp: new Date().toISOString()
+    };
+    if (!CONFIG2.ELIZA_CLOUD_API_URL) {
+      await callback({
+        text: `\uD83D\uDCCB **オペレーション指示を準備中**
+
+⚠️ Eliza Cloud APIが設定されていません。
+
+指示内容: "${userText.substring(0, 100)}..."
+
+Eliza Cloud Cooへの接続後、この指示を実行します。`,
+        source: message.content.source
+      });
+      return { success: false };
+    }
+    await callback({
+      text: `\uD83D\uDCCB **Eliza Cloud Cooへ指示を送信中...**
+
+指示内容: "${userText.substring(0, 100)}..."`,
+      source: message.content.source
+    });
+    const response = await sendToElizaCloud(agentMessage, agentName);
+    if (response.success) {
+      await callback({
+        text: `✅ **指示が受理されました**
+
+${response.message || "Eliza Cloud Cooが指示を受け付けました。"}${response.data?.status ? `
+
+ステータス: ${response.data.status}` : ""}`,
+        source: message.content.source
+      });
+      return { success: true };
+    } else {
+      await callback({
+        text: `⚠️ **指示の送信に失敗しました**
+
+エラー: ${response.error}
+
+後でもう一度お試しください。`,
+        source: message.content.source
+      });
+      return { success: false };
+    }
+  },
+  examples: [
+    [
+      {
+        name: "{{user1}}",
+        content: {
+          text: "Prepare a swap of 100 USDC to ETH on Base via Eliza Cloud"
+        }
+      },
+      {
+        name: "Dliza",
+        content: {
+          text: "\uD83D\uDCCB Eliza Cloud Cooへスワップ準備の指示を送信しています..."
+        }
+      }
+    ]
+  ]
+};
+var agentCommProvider = {
+  name: "agentCommProvider",
+  get: async (runtime2, message, _state) => {
+    const agentName = runtime2.character?.name || "unknown";
+    const text2 = (message.content.text || "").toLowerCase();
+    if (isElizaCloudRequest(text2)) {
+      logger19.info(`[AGENT_COMM_PROVIDER:${agentName}] Eliza Cloud request detected`);
+      const cloudStatus = CONFIG2.ELIZA_CLOUD_API_URL ? "接続可能" : "未設定（ELIZA_CLOUD_API_URL環境変数が必要）";
+      return {
+        text: `【エージェント間通信】Eliza Cloud Cooとの通信が可能です。ステータス: ${cloudStatus}`,
+        values: {
+          canCommunicateWithCloud: !!process.env.ELIZA_CLOUD_API_URL,
+          protocol: CONFIG2.PROTOCOL
+        },
+        data: {
+          elizaCloudUrl: CONFIG2.ELIZA_CLOUD_API_URL,
+          agentId: CONFIG2.ELIZA_CLOUD_AGENT_ID
+        }
+      };
+    }
+    return { text: "", values: {}, data: {} };
+  }
+};
+var agentCommPlugin = {
+  name: "agent-comm",
+  description: "Agent-to-Agent Communication Plugin for dWebXR team. Enables Railway agents to communicate with Eliza Cloud Coo via URL-based API calls.",
+  actions: [queryElizaCloudAction, sendInstructionAction],
+  providers: [agentCommProvider],
+  init: async (_config) => {
+    logger19.info("*** Agent Communication Plugin Initialized ***");
+    logger19.info(`*** Protocol: ${CONFIG2.PROTOCOL} ***`);
+    logger19.info(`*** Eliza Cloud URL: ${CONFIG2.ELIZA_CLOUD_API_URL || "(not set)"} ***`);
+    logger19.info(`*** Eliza Cloud Agent ID: ${CONFIG2.ELIZA_CLOUD_AGENT_ID} ***`);
+    if (!CONFIG2.ELIZA_CLOUD_API_URL) {
+      logger19.warn("*** ELIZA_CLOUD_API_URL not set - Agent communication will be simulated ***");
+    }
+  }
+};
+
 // src/index.ts
 var baseAgent = {
   character,
   init: async (_runtime) => {
-    logger19.info({ name: character.name }, "Base agent initialized");
+    logger20.info({ name: character.name }, "Base agent initialized");
   },
   plugins: [
     src_default,
@@ -74978,13 +77687,14 @@ var baseAgent = {
     deFiYieldPlugin,
     exchangeMonitorPlugin,
     x402Plugin,
+    agentCommPlugin,
     plugin_default
   ]
 };
 var twoAgent = {
   character: twoCharacter,
   init: async (_runtime) => {
-    logger19.info({ name: twoCharacter.name }, "Two agent initialized");
+    logger20.info({ name: twoCharacter.name }, "Two agent initialized");
   },
   plugins: [
     src_default,
@@ -74995,18 +77705,20 @@ var twoAgent = {
     deFiYieldPlugin,
     exchangeMonitorPlugin,
     x402Plugin,
+    agentCommPlugin,
     plugin_default
   ]
 };
 var alizaAgent = {
   character: alizaCharacter,
   init: async (_runtime) => {
-    logger19.info({ name: alizaCharacter.name }, "Aliza agent initialized (no x402 payment required)");
+    logger20.info({ name: alizaCharacter.name }, "Aliza agent initialized (no x402 payment required)");
   },
   plugins: [
     src_default,
     src_default2,
     newsPlugin,
+    agentCommPlugin,
     plugin_default
   ]
 };
@@ -75020,5 +77732,5 @@ export {
   character
 };
 
-//# debugId=9612D75FB1AEA5FC64756E2164756E21
+//# debugId=8E84965AE06EAE9564756E2164756E21
 //# sourceMappingURL=index.js.map
