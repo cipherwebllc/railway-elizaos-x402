@@ -1,5 +1,5 @@
 [phases.install]
-cmds = ["bun install"]
+cmds = ["npm install --legacy-peer-deps"]
 
 [phases.build]
-cmds = ["bun run build", "bun run postinstall"]
+cmds = ["npm run build", "npm run postinstall"]
