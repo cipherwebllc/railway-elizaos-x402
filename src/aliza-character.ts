@@ -410,14 +410,14 @@ URLを記載する際は、リンクが正しく機能するよう以下を守�
             shouldIgnoreDirectMessages: false,
             shouldRespondOnlyToMentions: false,
         },
-        mcp: {
+        mcp: process.env.MCP_GATEWAY_URL ? {
             servers: {
                 "appfav-gateway": {
                     type: "sse",
                     url: process.env.MCP_GATEWAY_URL
                 }
             }
-        }
+        } : undefined
     },
     plugins: [
         // Core plugins
