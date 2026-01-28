@@ -261,4 +261,73 @@ if (fs.existsSync(serverIndexPath)) {
     console.warn('⚠️ Server index.js not found.');
 }
 
+// ============================================
+// 6. Patch plugin-sql to include settings in getAll()
+// ============================================
+console.log('🖼️ Patching plugin-sql to include settings in agent getAll()...');
+
+const pluginSqlPaths = [
+    path.join(__dirname, '../node_modules/@elizaos/plugin-sql/dist/node/index.node.js'),
+    path.join(__dirname, '../node_modules/@elizaos/plugin-sql/dist/browser/index.browser.js'),
+];
+
+for (const pluginSqlPath of pluginSqlPaths) {
+    if (fs.existsSync(pluginSqlPath)) {
+        try {
+            let content = fs.readFileSync(pluginSqlPath, 'utf8');
+            let patched = false;
+
+            // Patch 1: Add settings to the select query in getAll()
+            // Original pattern: id: agentTable.id, name: agentTable.name, bio: agentTable.bio }).from(agentTable);
+            // Only patch if settings is NOT already in the select for agentTable
+            const selectPattern = /const rows = await this\.db\.select\(\{\s*id: agentTable\.id,\s*name: agentTable\.name,\s*bio: agentTable\.bio\s*\}\)\.from\(agentTable\);/g;
+            if (selectPattern.test(content)) {
+                content = content.replace(
+                    /const rows = await this\.db\.select\(\{\s*id: agentTable\.id,\s*name: agentTable\.name,\s*bio: agentTable\.bio\s*\}\)\.from\(agentTable\);/g,
+                    `const rows = await this.db.select({
+        id: agentTable.id,
+        name: agentTable.name,
+        bio: agentTable.bio,
+        settings: agentTable.settings
+      }).from(agentTable);`
+                );
+                console.log(`✅ Added settings to select query in: ${pluginSqlPath}`);
+                patched = true;
+            }
+
+            // Patch 2: Add settings to the returned object in AgentStore.getAll
+            // Original: return rows.map((row) => ({ ...row, id: row.id, bio: row.bio === null ? "" : row.bio }));
+            // This is followed by }, "AgentStore.getAll");
+            const mapPattern = /return rows\.map\(\(row\) => \(\{\s*\.\.\.row,\s*id: row\.id,\s*bio: row\.bio === null \? "" : row\.bio\s*\}\)\);\s*\}, "AgentStore\.getAll"\);/g;
+            if (mapPattern.test(content)) {
+                content = content.replace(
+                    /return rows\.map\(\(row\) => \(\{\s*\.\.\.row,\s*id: row\.id,\s*bio: row\.bio === null \? "" : row\.bio\s*\}\)\);\s*\}, "AgentStore\.getAll"\);/g,
+                    `return rows.map((row) => ({
+        ...row,
+        id: row.id,
+        bio: row.bio === null ? "" : row.bio,
+        settings: row.settings
+      }));
+    }, "AgentStore.getAll");`
+                );
+                console.log(`✅ Added settings to map result in: ${pluginSqlPath}`);
+                patched = true;
+            }
+
+            if (patched) {
+                fs.writeFileSync(pluginSqlPath, content);
+            } else {
+                // Check if already patched by looking for the specific getAll pattern with settings
+                if (content.includes('bio: agentTable.bio,\n        settings: agentTable.settings')) {
+                    console.log(`ℹ️ plugin-sql already patched: ${pluginSqlPath}`);
+                } else {
+                    console.warn(`⚠️ Could not find pattern to patch in: ${pluginSqlPath}`);
+                }
+            }
+        } catch (error) {
+            console.warn(`⚠️ Could not patch plugin-sql at ${pluginSqlPath}: ${error.message}`);
+        }
+    }
+}
+
 console.log('🎉 All patches complete!');
