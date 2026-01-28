@@ -52,6 +52,12 @@ export class NewsService extends Service {
       logger.info('Fetching crypto news from CryptoCompare');
 
       const response = await fetch(url);
+
+      if (!response.ok) {
+        logger.warn(`CryptoCompare API error: ${response.status} ${response.statusText}`);
+        return [];
+      }
+
       const data = await response.json();
 
       if (data.Data) {

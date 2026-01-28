@@ -44,6 +44,20 @@ const CONFIG = {
     DB_DIR: process.env.X402_DB_DIR || './data',
 };
 
+/**
+ * Check if the provided text matches the admin API key
+ * Only uses environment variable - no hard-coded fallback for security
+ */
+function isAdminKey(text: string): boolean {
+    const envKey = process.env.ADMIN_API_KEY;
+    if (!envKey) {
+        logger.warn('[x402] ADMIN_API_KEY not set - admin features disabled');
+        return false;
+    }
+    const cleanedText = text.trim().replace(/^["']|["']$/g, '');
+    return cleanedText === envKey;
+}
+
 // ============================================
 // SQLite Database Manager (using sql.js - pure JS, no native bindings)
 // ============================================
@@ -874,9 +888,7 @@ const checkPaymentAction: Action = {
         }
 
         // Check admin key - trigger handler to show admin login success
-        const envKey = process.env.ADMIN_API_KEY;
-        const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
-        if ((envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret') {
+        if (isAdminKey(message.content.text || '')) {
             logger.info(`[CHECK_PAYMENT:${agentName}] Admin key detected - triggering admin login`);
             // Store admin key flag in message metadata for handler
             (message as any)._isAdminKey = true;
@@ -1070,9 +1082,7 @@ const adminLoginAction: Action = {
     description: 'Grants admin access with correct key',
 
     validate: async (_runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
-        const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
-        const envKey = process.env.ADMIN_API_KEY;
-        return (envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret';
+        return isAdminKey(message.content.text || '');
     },
 
     handler: async (
@@ -1168,9 +1178,7 @@ const x402Provider: Provider = {
         }
 
         // Check admin key - and SET admin status in DB
-        const envKey = process.env.ADMIN_API_KEY;
-        const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
-        if ((envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret') {
+        if (isAdminKey(message.content.text || '')) {
             // Grant admin status to all user IDs
             const allUserIds = getAllUserIds(message);
             const db = service.getDatabase();
@@ -1289,9 +1297,7 @@ const x402PaymentGateEvaluator: Evaluator = {
         }
 
         // Check admin key
-        const envKey = process.env.ADMIN_API_KEY;
-        const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
-        if ((envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret') {
+        if (isAdminKey(message.content.text || '')) {
             return false;
         }
 
@@ -1353,12 +1359,9 @@ const x402AdminLoginEvaluator: Evaluator = {
 
     validate: async (runtime: IAgentRuntime, message: Memory, _state?: State): Promise<boolean> => {
         const agentName = runtime.character?.name || 'unknown';
-        const envKey = process.env.ADMIN_API_KEY;
-        const cleanedText = (message.content.text || '').trim().replace(/^["']|["']$/g, '');
+        const adminKeyDetected = isAdminKey(message.content.text || '');
 
-        const isAdminKey = (envKey && cleanedText === envKey) || cleanedText === 'x402-admin-secret';
-
-        if (isAdminKey) {
+        if (adminKeyDetected) {
             logger.info(`[X402_ADMIN_EVALUATOR:${agentName}] Admin key detected - will force admin login message`);
             return true;
         }

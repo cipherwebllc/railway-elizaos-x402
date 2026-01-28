@@ -51,6 +51,12 @@ export class GasMonitorService extends Service {
       logger.info('Fetching Ethereum gas prices');
 
       const response = await fetch(url);
+
+      if (!response.ok) {
+        logger.warn(`Etherscan API error: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
       const data = await response.json();
 
       if (data.status === '1' && data.result) {
@@ -78,6 +84,12 @@ export class GasMonitorService extends Service {
       logger.info('Fetching Base gas prices');
 
       const response = await fetch(url);
+
+      if (!response.ok) {
+        logger.warn(`Basescan API error: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
       const data = await response.json();
 
       if (data.status === '1' && data.result) {
@@ -105,6 +117,12 @@ export class GasMonitorService extends Service {
       logger.info('Fetching Polygon gas prices');
 
       const response = await fetch(url);
+
+      if (!response.ok) {
+        logger.warn(`Polygonscan API error: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
       const data = await response.json();
 
       if (data.status === '1' && data.result) {

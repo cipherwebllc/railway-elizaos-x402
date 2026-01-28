@@ -245,21 +245,21 @@ Language: Default is English, targeting a global audience. If the user inputs in
             OLLAMA_API_KEY: process.env.OLLAMA_API_KEY,
         },
         avatar: 'https://dwebxr.xyz/images/coodao.png',
-        model: 'anthropic/claude-sonnet-4.5',
+        model: 'anthropic/claude-sonnet-4',
         modelProvider: 'openrouter',
         discord: {
             shouldIgnoreBotMessages: true,
             shouldIgnoreDirectMessages: false,
             shouldRespondOnlyToMentions: false,
         },
-        mcp: {
+        mcp: process.env.MCP_GATEWAY_URL ? {
             servers: {
                 "appfav-gateway": {
                     type: "sse",
                     url: process.env.MCP_GATEWAY_URL
                 }
             }
-        }
+        } : undefined
     },
     plugins: [
         // Core plugins first
