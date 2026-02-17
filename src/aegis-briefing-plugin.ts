@@ -15,20 +15,23 @@ import {
 // ============================================
 const AEGIS_CONFIG = {
     BASE_URL: process.env.AEGIS_BASE_URL || 'https://aegis.dwebxr.xyz',
-    // ICP Principal for the Aegis user whose briefing to fetch (REQUIRED)
+    // ICP Principal (optional) — when set, fetches that user's briefing;
+    // when empty, fetches the global aggregated briefing from all D2A opt-in users.
     IC_PRINCIPAL: process.env.AEGIS_IC_PRINCIPAL || '',
     // x402 payment wallet private key (for signing USDC payments)
     WALLET_PRIVATE_KEY: process.env.AEGIS_WALLET_PRIVATE_KEY || '',
-    // Max payment amount in USDC base units (default 0.01 USDC)
+    // Max payment amount in USDC (default 0.01)
     MAX_PAYMENT: process.env.AEGIS_MAX_PAYMENT || '0.01',
     // How many top items to show in chat
     CHAT_ITEM_LIMIT: parseInt(process.env.AEGIS_CHAT_ITEM_LIMIT || '5', 10),
+    // Default page size for global briefing pagination
+    PAGE_LIMIT: parseInt(process.env.AEGIS_PAGE_LIMIT || '20', 10),
     // Cache TTL in milliseconds (default 5 minutes)
     CACHE_TTL: parseInt(process.env.AEGIS_CACHE_TTL || '300000', 10),
 };
 
 // ============================================
-// Types
+// Types — Individual Briefing (per-principal)
 // ============================================
 export interface AegisBriefingScores {
     originality: number;
@@ -64,7 +67,8 @@ export interface AegisBriefingMeta {
     topics?: string[];
 }
 
-export interface AegisBriefingResponse {
+/** Response when ?principal=xxx is specified */
+export interface AegisIndividualBriefing {
     version: string;
     generatedAt: string;
     source?: string;
@@ -75,14 +79,46 @@ export interface AegisBriefingResponse {
     meta?: AegisBriefingMeta;
 }
 
-export interface AegisInfoResponse {
-    name?: string;
-    description?: string;
-    version?: string;
-    price?: string | number;
-    currency?: string;
-    network?: string;
-    endpoints?: Record<string, string>;
+// ============================================
+// Types — Global Briefing (aggregated)
+// ============================================
+export interface AegisGlobalContributorItem {
+    title: string;
+    topics: string[];
+    briefingScore: number;
+    verdict: 'quality' | 'slop';
+}
+
+export interface AegisGlobalContributor {
+    principal: string;
+    generatedAt: string;
+    summary: AegisBriefingSummary;
+    topItems: AegisGlobalContributorItem[];
+}
+
+export interface AegisGlobalPagination {
+    offset: number;
+    limit: number;
+    total: number;
+}
+
+/** Response when no principal is specified (global aggregated) */
+export interface AegisGlobalBriefing {
+    version: string;
+    type: 'global';
+    generatedAt: string;
+    pagination: AegisGlobalPagination;
+    contributors: AegisGlobalContributor[];
+    aggregatedTopics: string[];
+    totalEvaluated: number;
+    totalQualityRate: number;
+}
+
+/** Union type for either response shape */
+export type AegisBriefingResponse = AegisIndividualBriefing | AegisGlobalBriefing;
+
+function isGlobalBriefing(data: AegisBriefingResponse): data is AegisGlobalBriefing {
+    return 'type' in data && data.type === 'global';
 }
 
 // ============================================
@@ -109,12 +145,6 @@ function setCachedBriefing(data: AegisBriefingResponse): void {
 // ============================================
 // x402-aware fetch helper
 // ============================================
-
-/**
- * Creates a fetch function that handles x402 payment flow.
- * If AEGIS_WALLET_PRIVATE_KEY is set, uses x402-fetch with viem wallet.
- * Otherwise, falls back to plain fetch (works for dev/free Aegis instances).
- */
 async function createX402Fetch(): Promise<typeof fetch> {
     if (!AEGIS_CONFIG.WALLET_PRIVATE_KEY) {
         logger.info('[Aegis] No wallet key configured - using plain fetch (dev/free mode)');
@@ -122,7 +152,6 @@ async function createX402Fetch(): Promise<typeof fetch> {
     }
 
     try {
-        // Dynamic imports to avoid breaking when deps aren't installed
         const { wrapFetchWithPayment } = await import('x402-fetch');
         const { createWalletClient, http } = await import('viem');
         const { privateKeyToAccount } = await import('viem/accounts');
@@ -138,7 +167,6 @@ async function createX402Fetch(): Promise<typeof fetch> {
         });
 
         const maxPayment = parseFloat(AEGIS_CONFIG.MAX_PAYMENT);
-        // x402-fetch expects maxValue in USDC base units (6 decimals)
         const maxValueBaseUnits = BigInt(Math.floor(maxPayment * 1_000_000));
 
         const wrappedFetch = wrapFetchWithPayment(
@@ -155,7 +183,6 @@ async function createX402Fetch(): Promise<typeof fetch> {
     }
 }
 
-// Lazy-initialized x402 fetch instance
 let x402FetchInstance: typeof fetch | null = null;
 
 async function getX402Fetch(): Promise<typeof fetch> {
@@ -170,33 +197,39 @@ async function getX402Fetch(): Promise<typeof fetch> {
 // ============================================
 
 /**
- * Fetch the Aegis D2A Briefing (main paid endpoint).
+ * Fetch briefing from Aegis D2A API.
+ * - If AEGIS_IC_PRINCIPAL is set: fetches that specific user's briefing.
+ * - If not set: fetches the global aggregated briefing from all D2A opt-in users.
  */
-export async function fetchAegisBriefing(): Promise<AegisBriefingResponse> {
-    // Check cache first
+export async function fetchAegisBriefing(options?: {
+    offset?: number;
+    limit?: number;
+}): Promise<AegisBriefingResponse> {
     const cached = getCachedBriefing();
     if (cached) {
         logger.info('[Aegis] Returning cached briefing');
         return cached;
     }
 
-    if (!AEGIS_CONFIG.IC_PRINCIPAL) {
-        throw new Error(
-            'AEGIS_IC_PRINCIPAL が未設定です。Aegis の ICP Principal ID を環境変数に設定してください。'
-        );
-    }
-
     const fetchFn = await getX402Fetch();
     const url = new URL(`${AEGIS_CONFIG.BASE_URL}/api/d2a/briefing`);
-    url.searchParams.set('principal', AEGIS_CONFIG.IC_PRINCIPAL);
 
-    logger.info(`[Aegis] Fetching briefing from ${url.toString()}`);
+    if (AEGIS_CONFIG.IC_PRINCIPAL) {
+        // Per-user mode
+        url.searchParams.set('principal', AEGIS_CONFIG.IC_PRINCIPAL);
+        logger.info(`[Aegis] Fetching individual briefing for principal: ${AEGIS_CONFIG.IC_PRINCIPAL}`);
+    } else {
+        // Global aggregated mode
+        const offset = options?.offset ?? 0;
+        const limit = options?.limit ?? AEGIS_CONFIG.PAGE_LIMIT;
+        if (offset > 0) url.searchParams.set('offset', String(offset));
+        if (limit !== 20) url.searchParams.set('limit', String(limit));
+        logger.info(`[Aegis] Fetching global briefing (offset=${offset}, limit=${limit})`);
+    }
 
     const res = await fetchFn(url.toString(), {
         method: 'GET',
-        headers: {
-            'Accept': 'application/json',
-        },
+        headers: { 'Accept': 'application/json' },
     });
 
     if (!res.ok) {
@@ -208,30 +241,32 @@ export async function fetchAegisBriefing(): Promise<AegisBriefingResponse> {
 
     const data = (await res.json()) as AegisBriefingResponse;
 
-    if (!data || !Array.isArray(data.items)) {
-        throw new Error('Invalid Aegis briefing response: missing items array');
+    // Validate based on response type
+    if (isGlobalBriefing(data)) {
+        if (!Array.isArray(data.contributors)) {
+            throw new Error('Invalid Aegis global briefing: missing contributors array');
+        }
+    } else {
+        if (!Array.isArray(data.items)) {
+            throw new Error('Invalid Aegis individual briefing: missing items array');
+        }
     }
 
     setCachedBriefing(data);
-    logger.info(`[Aegis] Briefing fetched: ${data.items.length} items, quality rate ${(data.summary.qualityRate * 100).toFixed(1)}%`);
 
-    return data;
-}
-
-/**
- * Fetch Aegis service info (free endpoint).
- */
-export async function fetchAegisInfo(): Promise<AegisInfoResponse> {
-    const res = await fetch(`${AEGIS_CONFIG.BASE_URL}/api/d2a/info`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-    });
-
-    if (!res.ok) {
-        throw new Error(`Aegis info request failed: ${res.status}`);
+    if (isGlobalBriefing(data)) {
+        logger.info(
+            `[Aegis] Global briefing fetched: ${data.contributors.length} contributors, ` +
+            `${data.totalEvaluated} total evaluated, quality rate ${(data.totalQualityRate * 100).toFixed(1)}%`
+        );
+    } else {
+        logger.info(
+            `[Aegis] Individual briefing fetched: ${data.items.length} items, ` +
+            `quality rate ${(data.summary.qualityRate * 100).toFixed(1)}%`
+        );
     }
 
-    return (await res.json()) as AegisInfoResponse;
+    return data;
 }
 
 /**
@@ -253,13 +288,9 @@ export async function checkAegisHealth(): Promise<boolean> {
 // ============================================
 
 /**
- * Format a briefing response for chat display.
- * Returns a structured summary suitable for agent conversation.
+ * Format an individual (per-principal) briefing for chat.
  */
-export function formatBriefingForChat(
-    briefing: AegisBriefingResponse,
-    limit: number = AEGIS_CONFIG.CHAT_ITEM_LIMIT,
-): string {
+function formatIndividualBriefing(briefing: AegisIndividualBriefing, limit: number): string {
     const items = [...briefing.items]
         .sort((a, b) => b.briefingScore - a.briefingScore)
         .slice(0, limit);
@@ -274,13 +305,12 @@ export function formatBriefingForChat(
     );
 
     items.forEach((item, idx) => {
-        const topics = item.topics.join(', ');
         const contentPreview = item.content.length > 280
             ? item.content.slice(0, 280) + '...'
             : item.content;
         lines.push(
             `\n**[${idx + 1}] ${item.title}**\n` +
-            `トピック: ${topics}\n` +
+            `トピック: ${item.topics.join(', ')}\n` +
             `スコア: ${item.briefingScore.toFixed(1)}/10` +
             ` (独自性:${item.scores.originality} 洞察:${item.scores.insight} 信頼性:${item.scores.credibility})\n` +
             `${contentPreview}`
@@ -306,36 +336,59 @@ export function formatBriefingForChat(
 }
 
 /**
- * Format briefing as structured data for agent context memory.
+ * Format a global (aggregated) briefing for chat.
  */
-export function formatBriefingForContext(
+function formatGlobalBriefing(briefing: AegisGlobalBriefing, itemLimit: number): string {
+    const lines: string[] = [];
+
+    lines.push(
+        `**Aegis D2A グローバルブリーフィング** (${new Date(briefing.generatedAt).toLocaleString('ja-JP')})\n` +
+        `参加者: ${briefing.pagination.total}人 | ` +
+        `総評価数: ${briefing.totalEvaluated}件 | ` +
+        `品質率: ${(briefing.totalQualityRate * 100).toFixed(1)}%`
+    );
+
+    if (briefing.aggregatedTopics.length > 0) {
+        lines.push(`注目トピック: ${briefing.aggregatedTopics.slice(0, 8).join(', ')}`);
+    }
+
+    // Collect all items from all contributors, sort by score, pick top N
+    const allItems: (AegisGlobalContributorItem & { contributorPrincipal: string })[] = [];
+    for (const c of briefing.contributors) {
+        for (const item of c.topItems) {
+            allItems.push({ ...item, contributorPrincipal: c.principal });
+        }
+    }
+    allItems.sort((a, b) => b.briefingScore - a.briefingScore);
+    const topItems = allItems.slice(0, itemLimit);
+
+    topItems.forEach((item, idx) => {
+        lines.push(
+            `\n**[${idx + 1}] ${item.title}**\n` +
+            `トピック: ${item.topics.join(', ')}\n` +
+            `スコア: ${item.briefingScore.toFixed(1)}/10 | 判定: ${item.verdict === 'quality' ? '高品質' : 'slop'}`
+        );
+    });
+
+    const { offset, limit, total } = briefing.pagination;
+    if (total > offset + limit) {
+        lines.push(`\n_さらに ${total - offset - limit} 人の参加者のデータがあります_`);
+    }
+
+    return lines.join('\n');
+}
+
+/**
+ * Format any briefing response for chat display.
+ */
+export function formatBriefingForChat(
     briefing: AegisBriefingResponse,
     limit: number = AEGIS_CONFIG.CHAT_ITEM_LIMIT,
 ): string {
-    const items = [...briefing.items]
-        .sort((a, b) => b.briefingScore - a.briefingScore)
-        .slice(0, limit);
-
-    const contextItems = items.map(item => ({
-        title: item.title,
-        topics: item.topics,
-        score: item.briefingScore,
-        verdict: item.verdict,
-        summary: item.content.slice(0, 500),
-    }));
-
-    return JSON.stringify({
-        source: 'aegis-d2a',
-        generatedAt: briefing.generatedAt,
-        qualityRate: briefing.summary.qualityRate,
-        totalEvaluated: briefing.summary.totalEvaluated,
-        topItems: contextItems,
-        serendipityPick: briefing.serendipityPick ? {
-            title: briefing.serendipityPick.title,
-            topics: briefing.serendipityPick.topics,
-            score: briefing.serendipityPick.briefingScore,
-        } : null,
-    });
+    if (isGlobalBriefing(briefing)) {
+        return formatGlobalBriefing(briefing, limit);
+    }
+    return formatIndividualBriefing(briefing, limit);
 }
 
 // ============================================
@@ -352,7 +405,7 @@ const aegisBriefingAction: Action = {
         'Fetches a curated, quality-scored briefing from the Aegis D2A API. ' +
         'Use this when the user asks about news, trends, AI developments, crypto updates, ' +
         'or any high-quality external information. Aegis filters out low-quality content (slop) ' +
-        'and returns only verified, high-scoring items.',
+        'and returns only verified, high-scoring items from all D2A opt-in users.',
 
     validate: async (
         _runtime: IAgentRuntime,
@@ -361,7 +414,6 @@ const aegisBriefingAction: Action = {
     ): Promise<boolean> => {
         const text = (message.content.text || '').toLowerCase();
 
-        // Trigger on explicit requests for briefing/news
         const triggers = [
             'aegis', 'ブリーフィング', 'briefing',
             '最新ニュース', '最新情報', 'latest news',
@@ -388,7 +440,6 @@ const aegisBriefingAction: Action = {
         _responses: Memory[],
     ): Promise<ActionResult> => {
         try {
-            // Check health first
             const healthy = await checkAegisHealth();
             if (!healthy) {
                 await callback({
@@ -406,18 +457,20 @@ const aegisBriefingAction: Action = {
                 source: message.content.source,
             });
 
-            logger.info(`[Aegis] Briefing delivered: ${briefing.items.length} items`);
+            if (isGlobalBriefing(briefing)) {
+                logger.info(`[Aegis] Global briefing delivered: ${briefing.contributors.length} contributors`);
+            } else {
+                logger.info(`[Aegis] Individual briefing delivered: ${briefing.items.length} items`);
+            }
             return { success: true };
         } catch (error: any) {
             logger.error('[Aegis] Briefing fetch failed:', error);
 
             let errorMsg: string;
-            if (error.message?.includes('AEGIS_IC_PRINCIPAL')) {
-                errorMsg = 'Aegis の ICP Principal ID が未設定です。管理者に AEGIS_IC_PRINCIPAL 環境変数の設定を確認してください。';
-            } else if (error.message?.includes('402')) {
+            if (error.message?.includes('402')) {
                 errorMsg = 'Aegis D2A ブリーフィングの取得に x402 決済が必要ですが、ウォレットが設定されていません。管理者に AEGIS_WALLET_PRIVATE_KEY の設定を確認してください。';
             } else if (error.message?.includes('404')) {
-                errorMsg = 'このPrincipalのブリーフィングデータがまだありません。Aegis Web アプリでコンテンツの評価・同期を行ってください。';
+                errorMsg = 'ブリーフィングデータがまだありません。Aegis で D2A をオプトインしたユーザーがコンテンツの評価・同期を行うとデータが利用可能になります。';
             } else {
                 errorMsg = `Aegis D2A ブリーフィングの取得に失敗しました: ${error.message}`;
             }
@@ -439,7 +492,7 @@ const aegisBriefingAction: Action = {
             {
                 name: 'Coo',
                 content: {
-                    text: 'Aegis D2A からブリーフィングを取得します。品質フィルタ済みの最新情報をお見せしますね。',
+                    text: 'Aegis D2A からグローバルブリーフィングを取得します。全参加者の品質フィルタ済み情報をお見せしますね。',
                 },
             },
         ],
@@ -463,7 +516,7 @@ const aegisBriefingAction: Action = {
             {
                 name: 'Coo',
                 content: {
-                    text: 'Aegis のブリーフィングを確認します。低品質コンテンツはフィルタ済みなので、信頼できる情報だけをお届けします。',
+                    text: 'Aegis のグローバルブリーフィングを確認します。D2A参加者がフィルタした高品質情報をお届けします。',
                 },
             },
         ],
@@ -481,27 +534,36 @@ const aegisBriefingProvider: Provider = {
         _message: Memory,
         _state?: State,
     ) => {
-        // Only inject cached briefing data if available
         const cached = getCachedBriefing();
         if (!cached) {
             return { text: '', values: {}, data: {} };
         }
 
-        const contextSummary =
-            `[Aegis D2A] 直近のブリーフィング: ` +
-            `${cached.items.length}件の高品質アイテム, ` +
-            `品質率 ${(cached.summary.qualityRate * 100).toFixed(1)}%, ` +
-            `トップトピック: ${[...new Set(cached.items.flatMap(i => i.topics))].slice(0, 5).join(', ')}`;
+        let contextSummary: string;
+        if (isGlobalBriefing(cached)) {
+            const topTopics = cached.aggregatedTopics.slice(0, 5).join(', ');
+            contextSummary =
+                `[Aegis D2A Global] ${cached.contributors.length}人の参加者から集約, ` +
+                `総評価数 ${cached.totalEvaluated}件, ` +
+                `品質率 ${(cached.totalQualityRate * 100).toFixed(1)}%, ` +
+                `注目トピック: ${topTopics}`;
+        } else {
+            const topTopics = [...new Set(cached.items.flatMap(i => i.topics))].slice(0, 5).join(', ');
+            contextSummary =
+                `[Aegis D2A] ${cached.items.length}件の高品質アイテム, ` +
+                `品質率 ${(cached.summary.qualityRate * 100).toFixed(1)}%, ` +
+                `トップトピック: ${topTopics}`;
+        }
 
         return {
             text: contextSummary,
             values: {
                 hasAegisBriefing: true,
                 aegisBriefingAge: Date.now() - (cachedBriefing?.fetchedAt || 0),
+                aegisBriefingMode: isGlobalBriefing(cached) ? 'global' : 'individual',
             },
             data: {
-                briefingSummary: cached.summary,
-                topItemCount: cached.items.length,
+                briefingType: isGlobalBriefing(cached) ? 'global' : 'individual',
             },
         };
     },
@@ -514,22 +576,17 @@ export const aegisBriefingPlugin: Plugin = {
     name: 'aegis-briefing',
     description:
         'Aegis D2A Briefing API client with x402 payment support. ' +
-        'Provides curated, quality-scored information feeds filtered by the Aegis VCL scoring model.',
+        'Fetches global aggregated briefings from all D2A opt-in users, or a specific user briefing when AEGIS_IC_PRINCIPAL is set.',
     actions: [aegisBriefingAction],
     providers: [aegisBriefingProvider],
     init: async (_config: Record<string, string>) => {
+        const mode = AEGIS_CONFIG.IC_PRINCIPAL ? 'individual' : 'global';
         logger.info('*** Aegis Briefing Plugin Initialized ***');
         logger.info(`*** Aegis Base URL: ${AEGIS_CONFIG.BASE_URL} ***`);
-        logger.info(`*** IC Principal: ${AEGIS_CONFIG.IC_PRINCIPAL || 'NOT SET (required)'} ***`);
+        logger.info(`*** Mode: ${mode}${AEGIS_CONFIG.IC_PRINCIPAL ? ` (principal: ${AEGIS_CONFIG.IC_PRINCIPAL})` : ' (all D2A opt-in users)'} ***`);
         logger.info(`*** x402 wallet: ${AEGIS_CONFIG.WALLET_PRIVATE_KEY ? 'configured' : 'not set (dev/free mode)'} ***`);
         logger.info(`*** Cache TTL: ${AEGIS_CONFIG.CACHE_TTL / 1000}s ***`);
 
-        if (!AEGIS_CONFIG.IC_PRINCIPAL) {
-            logger.warn('*** AEGIS_IC_PRINCIPAL is not set - briefing requests will fail ***');
-            logger.warn('*** Set the ICP Principal of an Aegis user who has synced briefing data ***');
-        }
-
-        // Optional: check health on startup
         try {
             const healthy = await checkAegisHealth();
             logger.info(`*** Aegis health: ${healthy ? 'OK' : 'UNREACHABLE'} ***`);
