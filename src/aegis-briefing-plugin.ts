@@ -87,6 +87,7 @@ export interface AegisGlobalContributorItem {
     topics: string[];
     briefingScore: number;
     verdict: 'quality' | 'slop';
+    sourceUrl?: string;
 }
 
 export interface AegisGlobalContributor {
@@ -308,23 +309,29 @@ function formatIndividualBriefing(briefing: AegisIndividualBriefing, limit: numb
         const contentPreview = item.content.length > 280
             ? item.content.slice(0, 280) + '...'
             : item.content;
+        const sourceLink = item.sourceUrl
+            ? `\n[続きを読む](${item.sourceUrl})`
+            : '';
         lines.push(
             `\n**[${idx + 1}] ${item.title}**\n` +
             `トピック: ${item.topics.join(', ')}\n` +
             `スコア: ${item.briefingScore.toFixed(1)}/10` +
             ` (独自性:${item.scores.originality} 洞察:${item.scores.insight} 信頼性:${item.scores.credibility})\n` +
-            `${contentPreview}`
+            `${contentPreview}${sourceLink}`
         );
     });
 
     if (briefing.serendipityPick) {
         const s = briefing.serendipityPick;
+        const serendipityLink = s.sourceUrl
+            ? `\n[続きを読む](${s.sourceUrl})`
+            : '';
         lines.push(
             `\n---\n` +
             `**セレンディピティ枠: ${s.title}**\n` +
             `トピック: ${s.topics.join(', ')}\n` +
             `スコア: ${s.briefingScore.toFixed(1)}/10\n` +
-            `${s.content.length > 200 ? s.content.slice(0, 200) + '...' : s.content}`
+            `${s.content.length > 200 ? s.content.slice(0, 200) + '...' : s.content}${serendipityLink}`
         );
     }
 
@@ -363,10 +370,13 @@ function formatGlobalBriefing(briefing: AegisGlobalBriefing, itemLimit: number):
     const topItems = allItems.slice(0, itemLimit);
 
     topItems.forEach((item, idx) => {
+        const sourceLink = item.sourceUrl
+            ? ` | [続きを読む](${item.sourceUrl})`
+            : '';
         lines.push(
             `\n**[${idx + 1}] ${item.title}**\n` +
             `トピック: ${item.topics.join(', ')}\n` +
-            `スコア: ${item.briefingScore.toFixed(1)}/10 | 判定: ${item.verdict === 'quality' ? '高品質' : 'slop'}`
+            `スコア: ${item.briefingScore.toFixed(1)}/10 | 判定: ${item.verdict === 'quality' ? '高品質' : 'slop'}${sourceLink}`
         );
     });
 
