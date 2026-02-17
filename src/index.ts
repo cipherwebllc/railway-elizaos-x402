@@ -28,6 +28,7 @@ import { x402Plugin } from "./x402-plugin.ts";
 import { erc8004Plugin } from "./plugins/erc8004/index.ts";
 import { agentCommPlugin } from "./agent-comm-plugin.ts";
 import { aegisBriefingPlugin } from "./aegis-briefing-plugin.ts";
+import { aegisTwitterPlugin } from "./aegis-twitter-plugin.ts";
 
 // 1体目
 const baseAgent: ProjectAgent = {
@@ -71,6 +72,7 @@ const twoAgent: ProjectAgent = {
     x402Plugin,
     agentCommPlugin,  // Agent-to-agent communication with Eliza Cloud
     aegisBriefingPlugin,  // Aegis D2A Briefing API (x402対応)
+    aegisTwitterPlugin,   // Aegis → Twitter 定期ポスト
     // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
