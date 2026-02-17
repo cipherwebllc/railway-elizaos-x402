@@ -15,6 +15,8 @@ import {
 // ============================================
 const AEGIS_CONFIG = {
     BASE_URL: process.env.AEGIS_BASE_URL || 'https://aegis.dwebxr.xyz',
+    // ICP Principal for the Aegis user whose briefing to fetch (REQUIRED)
+    IC_PRINCIPAL: process.env.AEGIS_IC_PRINCIPAL || '',
     // x402 payment wallet private key (for signing USDC payments)
     WALLET_PRIVATE_KEY: process.env.AEGIS_WALLET_PRIVATE_KEY || '',
     // Max payment amount in USDC base units (default 0.01 USDC)
@@ -41,10 +43,13 @@ export interface AegisBriefingScores {
 export interface AegisBriefingItem {
     title: string;
     content: string;
+    source?: string;
+    sourceUrl?: string;
     topics: string[];
     briefingScore: number;
     scores: AegisBriefingScores;
     verdict: 'quality' | 'slop';
+    reason?: string;
 }
 
 export interface AegisBriefingSummary {
@@ -62,9 +67,11 @@ export interface AegisBriefingMeta {
 export interface AegisBriefingResponse {
     version: string;
     generatedAt: string;
+    source?: string;
+    sourceUrl?: string;
     summary: AegisBriefingSummary;
     items: AegisBriefingItem[];
-    serendipityPick?: AegisBriefingItem;
+    serendipityPick?: AegisBriefingItem | null;
     meta?: AegisBriefingMeta;
 }
 
@@ -173,12 +180,19 @@ export async function fetchAegisBriefing(): Promise<AegisBriefingResponse> {
         return cached;
     }
 
+    if (!AEGIS_CONFIG.IC_PRINCIPAL) {
+        throw new Error(
+            'AEGIS_IC_PRINCIPAL が未設定です。Aegis の ICP Principal ID を環境変数に設定してください。'
+        );
+    }
+
     const fetchFn = await getX402Fetch();
-    const url = `${AEGIS_CONFIG.BASE_URL}/api/d2a/briefing`;
+    const url = new URL(`${AEGIS_CONFIG.BASE_URL}/api/d2a/briefing`);
+    url.searchParams.set('principal', AEGIS_CONFIG.IC_PRINCIPAL);
 
-    logger.info(`[Aegis] Fetching briefing from ${url}`);
+    logger.info(`[Aegis] Fetching briefing from ${url.toString()}`);
 
-    const res = await fetchFn(url, {
+    const res = await fetchFn(url.toString(), {
         method: 'GET',
         headers: {
             'Accept': 'application/json',
@@ -397,9 +411,16 @@ const aegisBriefingAction: Action = {
         } catch (error: any) {
             logger.error('[Aegis] Briefing fetch failed:', error);
 
-            const errorMsg = error.message?.includes('402')
-                ? 'Aegis D2A ブリーフィングの取得に x402 決済が必要ですが、ウォレットが設定されていません。管理者に AEGIS_WALLET_PRIVATE_KEY の設定を確認してください。'
-                : `Aegis D2A ブリーフィングの取得に失敗しました: ${error.message}`;
+            let errorMsg: string;
+            if (error.message?.includes('AEGIS_IC_PRINCIPAL')) {
+                errorMsg = 'Aegis の ICP Principal ID が未設定です。管理者に AEGIS_IC_PRINCIPAL 環境変数の設定を確認してください。';
+            } else if (error.message?.includes('402')) {
+                errorMsg = 'Aegis D2A ブリーフィングの取得に x402 決済が必要ですが、ウォレットが設定されていません。管理者に AEGIS_WALLET_PRIVATE_KEY の設定を確認してください。';
+            } else if (error.message?.includes('404')) {
+                errorMsg = 'このPrincipalのブリーフィングデータがまだありません。Aegis Web アプリでコンテンツの評価・同期を行ってください。';
+            } else {
+                errorMsg = `Aegis D2A ブリーフィングの取得に失敗しました: ${error.message}`;
+            }
 
             await callback({
                 text: errorMsg,
@@ -499,8 +520,14 @@ export const aegisBriefingPlugin: Plugin = {
     init: async (_config: Record<string, string>) => {
         logger.info('*** Aegis Briefing Plugin Initialized ***');
         logger.info(`*** Aegis Base URL: ${AEGIS_CONFIG.BASE_URL} ***`);
+        logger.info(`*** IC Principal: ${AEGIS_CONFIG.IC_PRINCIPAL || 'NOT SET (required)'} ***`);
         logger.info(`*** x402 wallet: ${AEGIS_CONFIG.WALLET_PRIVATE_KEY ? 'configured' : 'not set (dev/free mode)'} ***`);
         logger.info(`*** Cache TTL: ${AEGIS_CONFIG.CACHE_TTL / 1000}s ***`);
+
+        if (!AEGIS_CONFIG.IC_PRINCIPAL) {
+            logger.warn('*** AEGIS_IC_PRINCIPAL is not set - briefing requests will fail ***');
+            logger.warn('*** Set the ICP Principal of an Aegis user who has synced briefing data ***');
+        }
 
         // Optional: check health on startup
         try {
