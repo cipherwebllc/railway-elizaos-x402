@@ -8,6 +8,7 @@ import {
 // OpenRouter plugin for LLM
 import openrouterPlugin from "@elizaos/plugin-openrouter";
 import mcpPlugin from "@elizaos/plugin-mcp";
+import twitterPlugin from "@elizaos/plugin-twitter";
 
 import { coinGeckoPlugin } from "./coingecko-plugin.ts";
 import { newsPlugin } from "./news-plugin.ts";
@@ -71,6 +72,7 @@ const twoAgent: ProjectAgent = {
     exchangeMonitorPlugin,
     x402Plugin,
     agentCommPlugin,  // Agent-to-agent communication with Eliza Cloud
+    twitterPlugin,        // @elizaos/plugin-twitter — Twitter サービス本体
     aegisBriefingPlugin,  // Aegis D2A Briefing API (x402対応)
     aegisTwitterPlugin,   // Aegis → Twitter 定期ポスト
     // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ

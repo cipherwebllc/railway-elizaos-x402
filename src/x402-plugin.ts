@@ -501,7 +501,7 @@ function extractUserId(message: Memory): string {
         agentId: (message as any).agentId,
     };
 
-    logger.info(`[X402] extractUserId - All sources: ${JSON.stringify(sources)}`);
+    logger.debug(`[X402] extractUserId - All sources: ${JSON.stringify(sources)}`);
 
     // IMPORTANT: For web client (REST API), the userId field is actually the messageId
     // which changes every message. We need to use roomId as the persistent identifier.
@@ -510,7 +510,7 @@ function extractUserId(message: Memory): string {
     // For Telegram/Discord, use the actual sender ID from metadata
     const telegramSenderId = sources.rawSenderId;
     if (telegramSenderId && typeof telegramSenderId === 'number') {
-        logger.info(`[X402] extractUserId: Using Telegram senderId: ${telegramSenderId}`);
+        logger.debug(`[X402] extractUserId: Using Telegram senderId: ${telegramSenderId}`);
         return String(telegramSenderId);
     }
 
@@ -521,7 +521,7 @@ function extractUserId(message: Memory): string {
         // But for web client, authorId often equals messageId, so skip if it looks like a UUID
         const isUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!isUuidPattern.test(stableAuthorId)) {
-            logger.info(`[X402] extractUserId: Using stable authorId: ${stableAuthorId}`);
+            logger.debug(`[X402] extractUserId: Using stable authorId: ${stableAuthorId}`);
             return stableAuthorId;
         }
     }
@@ -529,13 +529,13 @@ function extractUserId(message: Memory): string {
     // For web client: use roomId as the persistent identifier
     // This represents the conversation/chat session
     if (sources.roomId) {
-        logger.info(`[X402] extractUserId: Using roomId as persistent identifier: ${sources.roomId}`);
+        logger.debug(`[X402] extractUserId: Using roomId as persistent identifier: ${sources.roomId}`);
         return sources.roomId;
     }
 
     // Fallback
     const fallback = sources.userId || sources.entityId || 'unknown';
-    logger.info(`[X402] extractUserId: Using fallback: ${fallback}`);
+    logger.debug(`[X402] extractUserId: Using fallback: ${fallback}`);
     return fallback;
 }
 
@@ -878,12 +878,12 @@ const checkPaymentAction: Action = {
         const text = (message.content.text || '').toLowerCase();
         const agentName = runtime.character?.name || 'unknown';
 
-        logger.info(`[CHECK_PAYMENT:${agentName}] Validating for user: ${userId}`);
+        logger.debug(`[CHECK_PAYMENT:${agentName}] Validating for user: ${userId}`);
 
         // Allow verification/status messages through
         if (text.includes('支払いました') || text.includes('paid') || text.includes('0x') ||
             text.includes('ステータス') || text.includes('status')) {
-            logger.info(`[CHECK_PAYMENT:${agentName}] Skipping - payment/status message`);
+            logger.debug(`[CHECK_PAYMENT:${agentName}] Skipping - payment/status message`);
             return false;
         }
 
@@ -897,7 +897,7 @@ const checkPaymentAction: Action = {
 
         // Check room admin
         if (message.roomId && service.getDatabase().isAdmin(message.roomId)) {
-            logger.info(`[CHECK_PAYMENT:${agentName}] Skipping - room is admin`);
+            logger.debug(`[CHECK_PAYMENT:${agentName}] Skipping - room is admin`);
             return false;
         }
 
@@ -906,10 +906,10 @@ const checkPaymentAction: Action = {
         const db = service.getDatabase();
         const status = db.getUserStatus(userId);
 
-        logger.info(`[CHECK_PAYMENT:${agentName}] User ${userId}: allowed=${access.allowed}, reason=${access.reason}, freeRemaining=${status.dailyFreeRemaining}`);
+        logger.debug(`[CHECK_PAYMENT:${agentName}] User ${userId}: allowed=${access.allowed}, reason=${access.reason}, freeRemaining=${status.dailyFreeRemaining}`);
 
         if (access.allowed) {
-            logger.info(`[CHECK_PAYMENT:${agentName}] User has access - NOT triggering payment gate`);
+            logger.debug(`[CHECK_PAYMENT:${agentName}] User has access - NOT triggering payment gate`);
             return false;
         }
 
@@ -1166,7 +1166,7 @@ const x402Provider: Provider = {
         const messageKey = getMessageKey(message);
         const agentName = runtime.character?.name || 'unknown';
 
-        logger.info(`[X402Provider:${agentName}] User: ${userId}, MessageKey: ${messageKey.substring(0, 30)}...`);
+        logger.debug(`[X402Provider:${agentName}] User: ${userId}, MessageKey: ${messageKey.substring(0, 30)}...`);
 
         // Skip payment check for special messages
         const hasAdmin = text.includes('admin') || text.includes('管理者');
@@ -1195,7 +1195,7 @@ const x402Provider: Provider = {
         // Check if this message was already processed by another agent
         const existingProcess = processedMessages.get(messageKey);
         if (existingProcess) {
-            logger.info(`[X402Provider:${agentName}] Message already processed, hasAccess=${existingProcess.hasAccess}, consumed=${existingProcess.consumed}`);
+            logger.debug(`[X402Provider:${agentName}] Message already processed, hasAccess=${existingProcess.hasAccess}, consumed=${existingProcess.consumed}`);
             if (existingProcess.hasAccess) {
                 return {
                     text: '',
@@ -1209,13 +1209,13 @@ const x402Provider: Provider = {
         const db = service.getDatabase();
         const status = db.getUserStatus(userId);
 
-        logger.info(`[X402Provider:${agentName}] Access check: allowed=${access.allowed}, reason=${access.reason}, freeRemaining=${status.dailyFreeRemaining}, credits=${status.credits}, isPro=${status.isPro}`);
+        logger.debug(`[X402Provider:${agentName}] Access check: allowed=${access.allowed}, reason=${access.reason}, freeRemaining=${status.dailyFreeRemaining}, credits=${status.credits}, isPro=${status.isPro}`);
 
         if (access.allowed && !existingProcess) {
             if (access.consumeType) {
                 service.consumeAccess(userId, access.consumeType);
                 processedMessages.set(messageKey, { userId, hasAccess: true, consumed: true, timestamp: Date.now() });
-                logger.info(`[X402Provider:${agentName}] Consumed ${access.consumeType} for ${userId} (first agent)`);
+                logger.debug(`[X402Provider:${agentName}] Consumed ${access.consumeType} for ${userId} (first agent)`);
             } else {
                 processedMessages.set(messageKey, { userId, hasAccess: true, consumed: false, timestamp: Date.now() });
             }
@@ -1234,14 +1234,14 @@ const x402Provider: Provider = {
 
         if (!existingProcess) {
             processedMessages.set(messageKey, { userId, hasAccess: false, consumed: false, timestamp: Date.now() });
-            logger.info(`[X402Provider:${agentName}] NO ACCESS for ${userId} - marked as processed`);
+            logger.debug(`[X402Provider:${agentName}] NO ACCESS for ${userId} - marked as processed`);
         }
 
         // NO ACCESS - Return blocking message to instruct model to show payment prompt
         const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
         const paymentLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}`;
 
-        logger.info(`[X402Provider:${agentName}] NO ACCESS - User ${userId} - blocking response`);
+        logger.debug(`[X402Provider:${agentName}] NO ACCESS - User ${userId} - blocking response`);
 
         const blockingMessage = `【重要：支払いが必要です】
 このユーザーは無料枠を使い切りました。質問には回答せず、以下の支払い案内のみを返してください：
@@ -1306,7 +1306,7 @@ const x402PaymentGateEvaluator: Evaluator = {
 
         // Only run evaluator if user does NOT have access
         const shouldRun = !access.allowed;
-        logger.info(`[X402_EVALUATOR:${agentName}] User ${userId}: allowed=${access.allowed}, shouldRun=${shouldRun}`);
+        logger.debug(`[X402_EVALUATOR:${agentName}] User ${userId}: allowed=${access.allowed}, shouldRun=${shouldRun}`);
 
         return shouldRun;
     },
