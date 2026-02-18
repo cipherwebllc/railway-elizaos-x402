@@ -271,6 +271,38 @@ export async function fetchAegisBriefing(options?: {
 }
 
 /**
+ * Fetch an individual briefing for a specific contributor principal.
+ * Used to get sourceUrl for items found in the global briefing.
+ */
+export async function fetchIndividualBriefing(principal: string): Promise<AegisIndividualBriefing | null> {
+    try {
+        const fetchFn = await getX402Fetch();
+        const url = new URL(`${AEGIS_CONFIG.BASE_URL}/api/d2a/briefing`);
+        url.searchParams.set('principal', principal);
+        logger.info(`[Aegis] Fetching individual briefing for principal: ${principal}`);
+
+        const res = await fetchFn(url.toString(), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+        });
+
+        if (!res.ok) {
+            logger.warn(`[Aegis] Individual briefing fetch failed: ${res.status}`);
+            return null;
+        }
+
+        const data = (await res.json()) as AegisIndividualBriefing;
+        if (!Array.isArray(data.items)) {
+            return null;
+        }
+        return data;
+    } catch (error: any) {
+        logger.warn(`[Aegis] Failed to fetch individual briefing: ${error.message}`);
+        return null;
+    }
+}
+
+/**
  * Check Aegis health (free endpoint).
  */
 export async function checkAegisHealth(): Promise<boolean> {

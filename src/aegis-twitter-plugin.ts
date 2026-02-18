@@ -7,6 +7,7 @@ import {
 import { TwitterApi } from 'twitter-api-v2';
 import {
     fetchAegisBriefing,
+    fetchIndividualBriefing,
     type AegisBriefingResponse,
     type AegisBriefingItem,
     type AegisGlobalBriefing,
@@ -40,6 +41,8 @@ function isGlobalBriefing(data: AegisBriefingResponse): data is AegisGlobalBrief
 
 /**
  * Pick the best item to tweet about from a briefing.
+ * For global briefings, also returns the contributor's principal
+ * so we can fetch the individual briefing for the sourceUrl.
  */
 function pickBestItem(briefing: AegisBriefingResponse): {
     title: string;
@@ -47,33 +50,24 @@ function pickBestItem(briefing: AegisBriefingResponse): {
     score: number;
     sourceUrl?: string;
     content?: string;
+    contributorPrincipal?: string;
 } | null {
     if (isGlobalBriefing(briefing)) {
-        const allItems: (AegisGlobalContributorItem & { _contributor?: string })[] = [];
+        const allItems: { item: AegisGlobalContributorItem; principal: string }[] = [];
         for (const c of briefing.contributors) {
             for (const item of c.topItems) {
-                allItems.push(item);
+                allItems.push({ item, principal: c.principal });
             }
         }
         if (allItems.length === 0) return null;
-        allItems.sort((a, b) => b.briefingScore - a.briefingScore);
+        allItems.sort((a, b) => b.item.briefingScore - a.item.briefingScore);
         const best = allItems[0];
-        // Log all fields of best item to discover available URL fields
-        const bestKeys = Object.keys(best);
-        const bestRaw = best as any;
-        logger.info(`[AegisTwitter] Raw topItem keys: ${JSON.stringify(bestKeys)}`);
-        // Check all possible URL fields
-        const possibleUrl = bestRaw.sourceUrl || bestRaw.url || bestRaw.link || bestRaw.source_url || bestRaw.articleUrl || bestRaw.source;
-        if (possibleUrl) {
-            logger.info(`[AegisTwitter] Found URL field: ${possibleUrl}`);
-        } else {
-            logger.info(`[AegisTwitter] No URL field found in item. Raw values: ${JSON.stringify(best).slice(0, 300)}`);
-        }
         return {
-            title: best.title,
-            topics: best.topics,
-            score: best.briefingScore,
-            sourceUrl: possibleUrl || undefined,
+            title: best.item.title,
+            topics: best.item.topics,
+            score: best.item.briefingScore,
+            sourceUrl: (best.item as any).sourceUrl || undefined,
+            contributorPrincipal: best.principal,
         };
     } else {
         if (!briefing.items || briefing.items.length === 0) return null;
@@ -324,6 +318,28 @@ export class AegisTwitterService extends Service {
             if (!item) {
                 logger.warn('[AegisTwitter] No items in briefing to tweet');
                 return;
+            }
+
+            // If no sourceUrl and we have a contributor principal, fetch the individual briefing
+            if (!item.sourceUrl && item.contributorPrincipal) {
+                try {
+                    const indBriefing = await fetchIndividualBriefing(item.contributorPrincipal);
+                    if (indBriefing?.items) {
+                        // Match by title (normalize whitespace for comparison)
+                        const normalizeTitle = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase();
+                        const matchedItem = indBriefing.items.find(
+                            i => normalizeTitle(i.title) === normalizeTitle(item.title)
+                        );
+                        if (matchedItem?.sourceUrl) {
+                            item.sourceUrl = matchedItem.sourceUrl;
+                            logger.info(`[AegisTwitter] Found sourceUrl from individual briefing: ${matchedItem.sourceUrl}`);
+                        } else {
+                            logger.info(`[AegisTwitter] No matching sourceUrl in individual briefing (${indBriefing.items.length} items checked)`);
+                        }
+                    }
+                } catch (error: any) {
+                    logger.warn(`[AegisTwitter] Failed to fetch individual briefing for sourceUrl: ${error.message}`);
+                }
             }
 
             logger.info(`[AegisTwitter] Best item: "${item.title.slice(0, 60)}..." score=${item.score} sourceUrl=${item.sourceUrl || 'none'}`);
