@@ -201,38 +201,20 @@ export class AegisTwitterService extends Service {
         }
 
         // Initialize twitter-api-v2 directly (bypass @elizaos/plugin-twitter)
-        try {
-            logger.info('[AegisTwitter] Initializing Twitter API v2 client directly...');
-            const client = new TwitterApi({
-                appKey: apiKey,
-                appSecret: apiSecretKey,
-                accessToken: accessToken,
-                accessSecret: accessTokenSecret,
-            });
-
-            // Test the connection by getting the authenticated user
-            const me = await client.v2.me();
-            logger.info(`[AegisTwitter] Twitter authenticated as @${me.data.username} (id: ${me.data.id})`);
-            service.twitterClient = client;
-        } catch (error: any) {
-            service.initError = error.message;
-            // Log the EXACT error — this is what we've been trying to see
-            logger.error(`[AegisTwitter] TWITTER AUTH FAILED: ${error.message}`);
-            if (error.code) {
-                logger.error(`[AegisTwitter] Error code: ${error.code}`);
-            }
-            if (error.data) {
-                try {
-                    logger.error(`[AegisTwitter] Error data: ${JSON.stringify(error.data)}`);
-                } catch { /* ignore */ }
-            }
-            // Don't throw — service starts but won't post
-            logger.warn('[AegisTwitter] Service started without Twitter — will retry on each post cycle');
-        }
+        // Skip v2.me() validation — it consumes rate limit on every deploy.
+        // Credentials will be validated on the first tweet attempt.
+        logger.info('[AegisTwitter] Creating Twitter API v2 client...');
+        service.twitterClient = new TwitterApi({
+            appKey: apiKey,
+            appSecret: apiSecretKey,
+            accessToken: accessToken,
+            accessSecret: accessTokenSecret,
+        });
+        logger.info('[AegisTwitter] Twitter client created (credentials will be validated on first post)');
 
         service.running = true;
 
-        if (TWITTER_POST_CONFIG.POST_ON_STARTUP && service.twitterClient) {
+        if (TWITTER_POST_CONFIG.POST_ON_STARTUP) {
             setTimeout(() => service.postBriefingTweet(runtime), 5_000);
         }
 
@@ -240,7 +222,7 @@ export class AegisTwitterService extends Service {
         logger.info(
             `[AegisTwitter] Started — interval ${TWITTER_POST_CONFIG.INTERVAL_MIN}-${TWITTER_POST_CONFIG.INTERVAL_MAX} min` +
             `${TWITTER_POST_CONFIG.DRY_RUN ? ' (DRY RUN)' : ''}` +
-            `${service.twitterClient ? '' : ' (NO TWITTER CLIENT)'}`
+            ` — client ready`
         );
 
         return service;
