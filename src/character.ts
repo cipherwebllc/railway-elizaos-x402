@@ -12,11 +12,9 @@ import { type Character } from '@elizaos/core';
 export const character: Character = {
   name: 'Dliza',
   plugins: [
-    // Core plugins first
+    // Core plugins (openrouter, data plugins etc. loaded via ProjectAgent.plugins in index.ts)
     '@elizaos/plugin-sql',
-
-    // OpenRouter plugin (required for LLM) - always load
-    '@elizaos/plugin-openrouter',
+    '@elizaos/plugin-bootstrap',
 
     // Embedding-capable plugins (optional)
     ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
@@ -30,9 +28,6 @@ export const character: Character = {
     // Information and data plugins
     '@elizaos/plugin-coinmarketcap',
     '@elizaos/plugin-defillama',
-
-    // Bootstrap plugin
-    '@elizaos/plugin-bootstrap',
   ],
   settings: {
     secrets: {

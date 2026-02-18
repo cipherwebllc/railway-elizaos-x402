@@ -10,6 +10,33 @@ import openrouterPlugin from "@elizaos/plugin-openrouter";
 import mcpPlugin from "@elizaos/plugin-mcp";
 import twitterPlugin from "@elizaos/plugin-twitter";
 
+// Wrap Twitter plugin to catch and explicitly log initialization errors
+// (Railway drops 5000+ logs during startup, hiding the real error)
+const wrappedTwitterServices = (twitterPlugin.services || []).map((ServiceClass: any) => {
+  const originalStart = ServiceClass.start;
+  const wrappedClass = class extends ServiceClass {
+    static serviceType = ServiceClass.serviceType;
+    static async start(runtime: IAgentRuntime) {
+      try {
+        logger.info(`[TwitterInit] Starting Twitter service (serviceType=${ServiceClass.serviceType})...`);
+        const instance = await originalStart.call(ServiceClass, runtime);
+        logger.info('[TwitterInit] Twitter service started successfully!');
+        return instance;
+      } catch (error: any) {
+        logger.error(`[TwitterInit] FAILED TO START: ${error.message}`);
+        logger.error(`[TwitterInit] Stack: ${error.stack?.split('\n').slice(0, 3).join(' | ')}`);
+        throw error;
+      }
+    }
+  };
+  return wrappedClass;
+});
+
+const wrappedTwitterPlugin = {
+  ...twitterPlugin,
+  services: wrappedTwitterServices,
+};
+
 import { coinGeckoPlugin } from "./coingecko-plugin.ts";
 import { newsPlugin } from "./news-plugin.ts";
 import { gasMonitorPlugin } from "./gas-monitor-plugin.ts";
@@ -55,11 +82,33 @@ const baseAgent: ProjectAgent = {
 // 2体目
 const twoAgent: ProjectAgent = {
   character: twoCharacter,
-  init: async (_runtime: IAgentRuntime) => {
+  init: async (runtime: IAgentRuntime) => {
     logger.info(
       { name: twoCharacter.name },
       "Two agent initialized",
     );
+    // Diagnostic: check Twitter service registration after 10s
+    setTimeout(() => {
+      const twSvc = runtime.getService('twitter');
+      if (twSvc) {
+        logger.info('[Coo:init] Twitter service is registered');
+      } else {
+        // List all registered services for debugging
+        logger.warn('[Coo:init] Twitter service NOT found after 10s');
+        try {
+          // Try to see what services are available
+          const allServices = (runtime as any).services || (runtime as any)._services;
+          if (allServices) {
+            const serviceNames = allServices instanceof Map
+              ? Array.from(allServices.keys())
+              : Object.keys(allServices);
+            logger.warn(`[Coo:init] Available services: ${JSON.stringify(serviceNames)}`);
+          }
+        } catch (e) {
+          logger.warn(`[Coo:init] Could not enumerate services: ${e}`);
+        }
+      }
+    }, 10_000);
   },
   plugins: [
     openrouterPlugin,
@@ -72,7 +121,7 @@ const twoAgent: ProjectAgent = {
     exchangeMonitorPlugin,
     x402Plugin,
     agentCommPlugin,  // Agent-to-agent communication with Eliza Cloud
-    twitterPlugin,        // @elizaos/plugin-twitter — Twitter サービス本体
+    wrappedTwitterPlugin,  // @elizaos/plugin-twitter — Twitter サービス本体 (with error logging)
     aegisBriefingPlugin,  // Aegis D2A Briefing API (x402対応)
     aegisTwitterPlugin,   // Aegis → Twitter 定期ポスト
     // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ

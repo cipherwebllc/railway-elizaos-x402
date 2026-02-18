@@ -420,22 +420,14 @@ URLを記載する際は、リンクが正しく機能するよう以下を守�
         } : undefined
     },
     plugins: [
-        // Core plugins
+        // Core plugins (openrouter, mcp loaded via ProjectAgent.plugins in index.ts)
         '@elizaos/plugin-sql',
-
-        // OpenRouter plugin (required for LLM) - always load
-        '@elizaos/plugin-openrouter',
+        '@elizaos/plugin-bootstrap',
 
         // Platform plugins
         ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
 
         // Embedding-capable plugins (optional)
         ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
-
-        // Bootstrap plugin
-        '@elizaos/plugin-bootstrap',
-
-        // MCP plugin for appfav-gateway
-        '@elizaos/plugin-mcp',
     ],
 };
