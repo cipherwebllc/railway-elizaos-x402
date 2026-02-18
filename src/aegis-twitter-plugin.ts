@@ -4,6 +4,7 @@ import {
     Service,
     logger,
 } from '@elizaos/core';
+import { TwitterApi } from 'twitter-api-v2';
 import {
     fetchAegisBriefing,
     type AegisBriefingResponse,
@@ -157,7 +158,7 @@ function wasTweeted(title: string): boolean {
 }
 
 // ============================================
-// Service: Aegis Twitter Poster
+// Service: Aegis Twitter Poster (Direct twitter-api-v2)
 // ============================================
 export class AegisTwitterService extends Service {
     static serviceType = 'aegis-twitter';
@@ -165,7 +166,8 @@ export class AegisTwitterService extends Service {
 
     private timer: ReturnType<typeof setTimeout> | null = null;
     private running = false;
-    private twitterUnavailableCount = 0;
+    private twitterClient: TwitterApi | null = null;
+    private initError: string | null = null;
 
     static async start(runtime: IAgentRuntime): Promise<AegisTwitterService> {
         const service = new AegisTwitterService(runtime);
@@ -176,33 +178,62 @@ export class AegisTwitterService extends Service {
         }
 
         // Check that Twitter credentials are available
-        const hasTwitter = runtime.getSetting('TWITTER_API_KEY');
-        if (!hasTwitter) {
-            logger.warn('[AegisTwitter] TWITTER_API_KEY not set — service will not post');
+        const apiKey = runtime.getSetting('TWITTER_API_KEY');
+        const apiSecretKey = runtime.getSetting('TWITTER_API_SECRET_KEY');
+        const accessToken = runtime.getSetting('TWITTER_ACCESS_TOKEN');
+        const accessTokenSecret = runtime.getSetting('TWITTER_ACCESS_TOKEN_SECRET');
+
+        if (!apiKey || !apiSecretKey || !accessToken || !accessTokenSecret) {
+            const missing = [];
+            if (!apiKey) missing.push('TWITTER_API_KEY');
+            if (!apiSecretKey) missing.push('TWITTER_API_SECRET_KEY');
+            if (!accessToken) missing.push('TWITTER_ACCESS_TOKEN');
+            if (!accessTokenSecret) missing.push('TWITTER_ACCESS_TOKEN_SECRET');
+            logger.warn(`[AegisTwitter] Missing credentials: ${missing.join(', ')} — service will not post`);
             return service;
+        }
+
+        // Initialize twitter-api-v2 directly (bypass @elizaos/plugin-twitter)
+        try {
+            logger.info('[AegisTwitter] Initializing Twitter API v2 client directly...');
+            const client = new TwitterApi({
+                appKey: apiKey,
+                appSecret: apiSecretKey,
+                accessToken: accessToken,
+                accessSecret: accessTokenSecret,
+            });
+
+            // Test the connection by getting the authenticated user
+            const me = await client.v2.me();
+            logger.info(`[AegisTwitter] Twitter authenticated as @${me.data.username} (id: ${me.data.id})`);
+            service.twitterClient = client;
+        } catch (error: any) {
+            service.initError = error.message;
+            // Log the EXACT error — this is what we've been trying to see
+            logger.error(`[AegisTwitter] TWITTER AUTH FAILED: ${error.message}`);
+            if (error.code) {
+                logger.error(`[AegisTwitter] Error code: ${error.code}`);
+            }
+            if (error.data) {
+                try {
+                    logger.error(`[AegisTwitter] Error data: ${JSON.stringify(error.data)}`);
+                } catch { /* ignore */ }
+            }
+            // Don't throw — service starts but won't post
+            logger.warn('[AegisTwitter] Service started without Twitter — will retry on each post cycle');
         }
 
         service.running = true;
 
-        // Log Twitter service readiness after a delay (gives @elizaos/plugin-twitter time to init)
-        setTimeout(() => {
-            const twSvc = runtime.getService('twitter') as any;
-            if (twSvc?.twitterClient?.client) {
-                logger.info('[AegisTwitter] Twitter service is ready — tweets will be posted');
-            } else {
-                logger.warn(`[AegisTwitter] Twitter service not ready after 60s — service=${!!twSvc}, twitterClient=${!!twSvc?.twitterClient}, client=${!!twSvc?.twitterClient?.client}`);
-            }
-        }, 60_000);
-
-        if (TWITTER_POST_CONFIG.POST_ON_STARTUP) {
-            // Small delay to let Twitter service initialize
-            setTimeout(() => service.postBriefingTweet(runtime), 30_000);
+        if (TWITTER_POST_CONFIG.POST_ON_STARTUP && service.twitterClient) {
+            setTimeout(() => service.postBriefingTweet(runtime), 5_000);
         }
 
         service.scheduleNext(runtime);
         logger.info(
             `[AegisTwitter] Started — interval ${TWITTER_POST_CONFIG.INTERVAL_MIN}-${TWITTER_POST_CONFIG.INTERVAL_MAX} min` +
-            `${TWITTER_POST_CONFIG.DRY_RUN ? ' (DRY RUN)' : ''}`
+            `${TWITTER_POST_CONFIG.DRY_RUN ? ' (DRY RUN)' : ''}` +
+            `${service.twitterClient ? '' : ' (NO TWITTER CLIENT)'}`
         );
 
         return service;
@@ -237,6 +268,40 @@ export class AegisTwitterService extends Service {
         }, interval);
     }
 
+    /**
+     * Try to (re-)initialize the Twitter client if it's not available.
+     */
+    private async tryInitClient(runtime: IAgentRuntime): Promise<boolean> {
+        if (this.twitterClient) return true;
+
+        const apiKey = runtime.getSetting('TWITTER_API_KEY');
+        const apiSecretKey = runtime.getSetting('TWITTER_API_SECRET_KEY');
+        const accessToken = runtime.getSetting('TWITTER_ACCESS_TOKEN');
+        const accessTokenSecret = runtime.getSetting('TWITTER_ACCESS_TOKEN_SECRET');
+
+        if (!apiKey || !apiSecretKey || !accessToken || !accessTokenSecret) {
+            return false;
+        }
+
+        try {
+            const client = new TwitterApi({
+                appKey: apiKey,
+                appSecret: apiSecretKey,
+                accessToken: accessToken,
+                accessSecret: accessTokenSecret,
+            });
+            // Quick validation - don't call me() each time, just try to post
+            this.twitterClient = client;
+            this.initError = null;
+            logger.info('[AegisTwitter] Twitter client re-initialized successfully');
+            return true;
+        } catch (error: any) {
+            this.initError = error.message;
+            logger.warn(`[AegisTwitter] Twitter re-init failed: ${error.message}`);
+            return false;
+        }
+    }
+
     private async postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
         try {
             logger.info('[AegisTwitter] Fetching briefing for tweet...');
@@ -262,49 +327,33 @@ export class AegisTwitterService extends Service {
                 return;
             }
 
-            // Get the Twitter service from runtime
-            const twitterService = runtime.getService('twitter') as any;
-            if (!twitterService) {
-                this.twitterUnavailableCount++;
-                if (this.twitterUnavailableCount <= 2 || this.twitterUnavailableCount % 5 === 0) {
-                    logger.warn(`[AegisTwitter] Twitter service not registered (attempt #${this.twitterUnavailableCount}) — @elizaos/plugin-twitter may have failed to initialize (check API credentials and tier)`);
+            // Try to get/re-init the Twitter client
+            if (!this.twitterClient) {
+                const ok = await this.tryInitClient(runtime);
+                if (!ok) {
+                    logger.warn(`[AegisTwitter] No Twitter client available — last error: ${this.initError || 'unknown'}`);
+                    return;
                 }
-                return;
-            }
-            if (!twitterService.twitterClient) {
-                this.twitterUnavailableCount++;
-                if (this.twitterUnavailableCount <= 2 || this.twitterUnavailableCount % 5 === 0) {
-                    logger.warn(`[AegisTwitter] Twitter service exists but twitterClient is missing (attempt #${this.twitterUnavailableCount}) — authentication may have failed`);
-                }
-                return;
-            }
-            if (!twitterService.twitterClient.client) {
-                this.twitterUnavailableCount++;
-                if (this.twitterUnavailableCount <= 2 || this.twitterUnavailableCount % 5 === 0) {
-                    logger.warn(`[AegisTwitter] Twitter service twitterClient exists but client (ClientBase) is missing (attempt #${this.twitterUnavailableCount})`);
-                }
-                return;
             }
 
-            // Reset counter on success
-            this.twitterUnavailableCount = 0;
-
-            const client = twitterService.twitterClient.client;
-            const result = await client.twitterClient.sendTweet(tweet);
-
-            const tweetData = result?.data?.data || result?.data;
-            const tweetId = tweetData?.id;
-            const username = client.profile?.username || 'unknown';
-
+            // Post tweet using twitter-api-v2 directly
+            const result = await this.twitterClient!.v2.tweet(tweet);
             markAsTweeted(item.title);
 
+            const tweetId = result.data?.id;
             if (tweetId) {
-                logger.info(`[AegisTwitter] Posted: https://x.com/${username}/status/${tweetId}`);
+                logger.info(`[AegisTwitter] Posted tweet id=${tweetId} (${tweet.length} chars)`);
             } else {
                 logger.info(`[AegisTwitter] Tweet sent (${tweet.length} chars)`);
             }
         } catch (error: any) {
             logger.error(`[AegisTwitter] Failed to post: ${error.message}`);
+            if (error.code === 403 || error.code === 401) {
+                // Auth error — reset client to retry next cycle
+                this.twitterClient = null;
+                this.initError = error.message;
+                logger.warn('[AegisTwitter] Auth error — will retry client init next cycle');
+            }
         }
     }
 }
@@ -315,14 +364,11 @@ export class AegisTwitterService extends Service {
 export const aegisTwitterPlugin: Plugin = {
     name: 'aegis-twitter',
     description:
-        'Periodically posts Aegis D2A briefing highlights to Twitter/X. ' +
-        'Requires @elizaos/plugin-twitter to be configured with valid API credentials.',
+        'Periodically posts Aegis D2A briefing highlights to Twitter/X using twitter-api-v2 directly.',
     services: [AegisTwitterService],
     init: async (_config: Record<string, string>) => {
         logger.info('*** Aegis Twitter Plugin Registered ***');
-        logger.info(`*** Enabled: ${TWITTER_POST_CONFIG.ENABLED} ***`);
-        logger.info(`*** Interval: ${TWITTER_POST_CONFIG.INTERVAL_MIN}-${TWITTER_POST_CONFIG.INTERVAL_MAX} min ***`);
-        logger.info(`*** Dry run: ${TWITTER_POST_CONFIG.DRY_RUN} ***`);
+        logger.info(`*** Enabled: ${TWITTER_POST_CONFIG.ENABLED}, DryRun: ${TWITTER_POST_CONFIG.DRY_RUN} ***`);
     },
 };
 
