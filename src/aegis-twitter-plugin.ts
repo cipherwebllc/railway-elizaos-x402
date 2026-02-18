@@ -165,6 +165,7 @@ export class AegisTwitterService extends Service {
 
     private timer: ReturnType<typeof setTimeout> | null = null;
     private running = false;
+    private twitterUnavailableCount = 0;
 
     static async start(runtime: IAgentRuntime): Promise<AegisTwitterService> {
         const service = new AegisTwitterService(runtime);
@@ -182,6 +183,16 @@ export class AegisTwitterService extends Service {
         }
 
         service.running = true;
+
+        // Log Twitter service readiness after a delay (gives @elizaos/plugin-twitter time to init)
+        setTimeout(() => {
+            const twSvc = runtime.getService('twitter') as any;
+            if (twSvc?.twitterClient?.client) {
+                logger.info('[AegisTwitter] Twitter service is ready — tweets will be posted');
+            } else {
+                logger.warn(`[AegisTwitter] Twitter service not ready after 60s — service=${!!twSvc}, twitterClient=${!!twSvc?.twitterClient}, client=${!!twSvc?.twitterClient?.client}`);
+            }
+        }, 60_000);
 
         if (TWITTER_POST_CONFIG.POST_ON_STARTUP) {
             // Small delay to let Twitter service initialize
@@ -253,10 +264,30 @@ export class AegisTwitterService extends Service {
 
             // Get the Twitter service from runtime
             const twitterService = runtime.getService('twitter') as any;
-            if (!twitterService?.twitterClient?.client) {
-                logger.warn('[AegisTwitter] Twitter service not available — skipping post');
+            if (!twitterService) {
+                this.twitterUnavailableCount++;
+                if (this.twitterUnavailableCount <= 2 || this.twitterUnavailableCount % 5 === 0) {
+                    logger.warn(`[AegisTwitter] Twitter service not registered (attempt #${this.twitterUnavailableCount}) — @elizaos/plugin-twitter may have failed to initialize (check API credentials and tier)`);
+                }
                 return;
             }
+            if (!twitterService.twitterClient) {
+                this.twitterUnavailableCount++;
+                if (this.twitterUnavailableCount <= 2 || this.twitterUnavailableCount % 5 === 0) {
+                    logger.warn(`[AegisTwitter] Twitter service exists but twitterClient is missing (attempt #${this.twitterUnavailableCount}) — authentication may have failed`);
+                }
+                return;
+            }
+            if (!twitterService.twitterClient.client) {
+                this.twitterUnavailableCount++;
+                if (this.twitterUnavailableCount <= 2 || this.twitterUnavailableCount % 5 === 0) {
+                    logger.warn(`[AegisTwitter] Twitter service twitterClient exists but client (ClientBase) is missing (attempt #${this.twitterUnavailableCount})`);
+                }
+                return;
+            }
+
+            // Reset counter on success
+            this.twitterUnavailableCount = 0;
 
             const client = twitterService.twitterClient.client;
             const result = await client.twitterClient.sendTweet(tweet);
