@@ -352,11 +352,19 @@ export class AegisTwitterService extends Service {
             }
         } catch (error: any) {
             logger.error(`[AegisTwitter] Failed to post: ${error.message}`);
-            if (error.code === 403 || error.code === 401) {
-                // Auth error — reset client to retry next cycle
+            // Log response details for API errors
+            if (error.data) {
+                try {
+                    logger.error(`[AegisTwitter] API response: ${JSON.stringify(error.data)}`);
+                } catch { /* ignore */ }
+            }
+            if (error.code === 403) {
+                logger.error('[AegisTwitter] 403 Forbidden — App likely has "Read" permissions only. Go to Developer Portal → App Settings → User authentication settings → change to "Read and Write", then regenerate Access Token & Secret.');
+                // Don't reset client — the credentials are valid, just need Write permission
+            } else if (error.code === 401) {
                 this.twitterClient = null;
                 this.initError = error.message;
-                logger.warn('[AegisTwitter] Auth error — will retry client init next cycle');
+                logger.warn('[AegisTwitter] 401 Unauthorized — will retry client init next cycle');
             }
         }
     }
