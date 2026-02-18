@@ -300,15 +300,12 @@ Language: Default is English, targeting a global audience. If the user inputs in
         } : undefined
     },
     plugins: [
-        // Core plugins first
+        // Core plugins
         '@elizaos/plugin-sql',
+        '@elizaos/plugin-bootstrap',
 
-        // OpenRouter plugin (required for LLM) - always load
-        '@elizaos/plugin-openrouter',
-
-        // Platform plugins
+        // Platform plugins (Discord loaded via index.ts agent plugins, Twitter loaded directly there too)
         ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
-        ...(process.env.TWITTER_API_KEY?.trim() ? ['@elizaos/plugin-twitter'] : []),
 
         // Embedding-capable plugins (optional)
         ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),
@@ -318,9 +315,5 @@ Language: Default is English, targeting a global audience. If the user inputs in
         // Information and data plugins
         '@elizaos/plugin-coinmarketcap',
         '@elizaos/plugin-defillama',
-
-        // Bootstrap plugin
-        '@elizaos/plugin-bootstrap',
-        '@elizaos/plugin-mcp',
     ],
 };
