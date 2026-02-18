@@ -110,7 +110,9 @@ function formatTweet(item: {
         .map(t => `#${t.replace(/[^a-zA-Z0-9_\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/g, '')}`)
         .join(' ');
 
-    const link = item.sourceUrl ? `\n${item.sourceUrl}` : '';
+    const link = item.sourceUrl
+        ? `\n${item.sourceUrl}`
+        : `\nhttps://aegis.dwebxr.xyz`;
 
     // Pick a random template
     const template = TWEET_TEMPLATES[Math.floor(Math.random() * TWEET_TEMPLATES.length)];
@@ -312,6 +314,8 @@ export class AegisTwitterService extends Service {
                 logger.warn('[AegisTwitter] No items in briefing to tweet');
                 return;
             }
+
+            logger.info(`[AegisTwitter] Best item: "${item.title.slice(0, 60)}..." score=${item.score} sourceUrl=${item.sourceUrl || 'none'}`);
 
             // Skip if we already tweeted this
             if (wasTweeted(item.title)) {
