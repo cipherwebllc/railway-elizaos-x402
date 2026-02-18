@@ -58,11 +58,22 @@ function pickBestItem(briefing: AegisBriefingResponse): {
         if (allItems.length === 0) return null;
         allItems.sort((a, b) => b.briefingScore - a.briefingScore);
         const best = allItems[0];
+        // Log all fields of best item to discover available URL fields
+        const bestKeys = Object.keys(best);
+        const bestRaw = best as any;
+        logger.info(`[AegisTwitter] Raw topItem keys: ${JSON.stringify(bestKeys)}`);
+        // Check all possible URL fields
+        const possibleUrl = bestRaw.sourceUrl || bestRaw.url || bestRaw.link || bestRaw.source_url || bestRaw.articleUrl || bestRaw.source;
+        if (possibleUrl) {
+            logger.info(`[AegisTwitter] Found URL field: ${possibleUrl}`);
+        } else {
+            logger.info(`[AegisTwitter] No URL field found in item. Raw values: ${JSON.stringify(best).slice(0, 300)}`);
+        }
         return {
             title: best.title,
             topics: best.topics,
             score: best.briefingScore,
-            sourceUrl: best.sourceUrl,
+            sourceUrl: possibleUrl || undefined,
         };
     } else {
         if (!briefing.items || briefing.items.length === 0) return null;
