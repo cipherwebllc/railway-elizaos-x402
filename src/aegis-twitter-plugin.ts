@@ -1,6 +1,7 @@
 import type { Plugin } from '@elizaos/core';
 import {
     type IAgentRuntime,
+    ModelType,
     Service,
     logger,
 } from '@elizaos/core';
@@ -85,20 +86,70 @@ function pickBestItem(briefing: AegisBriefingResponse): {
     }
 }
 
-// Variety in tweet templates to avoid repetitive posts
-const TWEET_TEMPLATES = [
-    (title: string, hashtags: string, link: string) =>
-        `${title}\n\nAegis D2A quality-scored briefing\n${hashtags}${link}`,
-    (title: string, hashtags: string, link: string) =>
-        `${title}\n\n${hashtags}${link}`,
-    (title: string, hashtags: string, link: string) =>
-        `Aegis D2A Briefing:\n${title}\n${hashtags}${link}`,
-    (title: string, hashtags: string, link: string) =>
-        `${title}\n\nFiltered by Aegis VCL scoring\n${hashtags}${link}`,
-];
+// ============================================
+// LLM-based Tweet Commentary Generation
+// ============================================
 
 /**
- * Format an Aegis briefing item as a tweet.
+ * Generate a concise analytical commentary for a briefing item using the LLM.
+ * Returns an empty string on failure (caller should handle fallback).
+ */
+async function generateCommentary(
+    runtime: IAgentRuntime,
+    item: {
+        title: string;
+        content?: string;
+        topics: string[];
+        score: number;
+    },
+): Promise<string> {
+    try {
+        const contentSnippet = item.content
+            ? item.content.slice(0, 500)
+            : '(no article content available)';
+
+        const prompt = `You are Coo, a Web3 technical advisor. Write a single concise tweet-length commentary (max 90 characters) about the article below. Provide an insightful take — what it means, why it matters, or a strategic angle. Do NOT be promotional. Do NOT mention "Aegis" or "D2A". Match the language of the title (if Japanese, write in Japanese; if English, write in English).
+
+Title: ${item.title}
+Content: ${contentSnippet}
+Topics: ${item.topics.join(', ')}
+Quality Score: ${item.score.toFixed(1)}/10
+
+Reply with ONLY the commentary line. No quotes, no prefixes, no hashtags.`;
+
+        const result = await runtime.useModel(ModelType.TEXT_SMALL, {
+            prompt,
+            maxTokens: 80,
+            temperature: 0.7,
+        });
+
+        if (!result || typeof result !== 'string') {
+            logger.warn('[AegisTwitter] LLM returned empty/invalid commentary');
+            return '';
+        }
+
+        // Clean up: remove quotes, known prefixes, excess whitespace
+        let commentary = result
+            .trim()
+            .replace(/^["'「『]|["'」』]$/g, '')  // strip wrapping quotes
+            .replace(/^(Commentary|Comment|Analysis|Take|Insight|コメント|分析)[:\s：]*/i, '')  // strip prefixes
+            .trim();
+
+        // Hard-truncate if too long
+        if (commentary.length > 100) {
+            commentary = commentary.slice(0, 97) + '...';
+        }
+
+        logger.info(`[AegisTwitter] LLM commentary (${commentary.length} chars): "${commentary}"`);
+        return commentary;
+    } catch (error: any) {
+        logger.warn(`[AegisTwitter] LLM commentary generation failed: ${error.message}`);
+        return '';
+    }
+}
+
+/**
+ * Format an Aegis briefing item as a tweet with optional LLM commentary.
  */
 function formatTweet(item: {
     title: string;
@@ -106,7 +157,7 @@ function formatTweet(item: {
     score: number;
     sourceUrl?: string;
     content?: string;
-}): string {
+}, commentary: string = ''): string {
     const maxLen = TWITTER_POST_CONFIG.MAX_TWEET_LENGTH;
 
     // Build hashtags from topics (up to 3)
@@ -119,27 +170,49 @@ function formatTweet(item: {
         ? `\n${item.sourceUrl}`
         : `\nhttps://aegis.dwebxr.xyz`;
 
-    // Pick a random template
-    const template = TWEET_TEMPLATES[Math.floor(Math.random() * TWEET_TEMPLATES.length)];
+    // Build tweet: title + commentary (if available) + hashtags + link
+    const buildTweet = (title: string, comment: string, tags: string) => {
+        const parts = [title];
+        if (comment) parts.push(comment);
+        if (tags) parts.push(tags);
+        return parts.join('\n\n') + link;
+    };
 
-    // Try with full title first
-    let tweet = template(item.title, hashtags, link);
+    // Try with full title + commentary + hashtags
+    let tweet = buildTweet(item.title, commentary, hashtags);
 
-    // If too long, truncate title
-    if (tweet.length > maxLen) {
-        const overhead = tweet.length - item.title.length;
-        const availableForTitle = maxLen - overhead - 3; // 3 for "..."
-        const truncatedTitle = item.title.slice(0, availableForTitle) + '...';
-        tweet = template(truncatedTitle, hashtags, link);
+    // If too long, try truncating commentary first
+    if (tweet.length > maxLen && commentary) {
+        const overhead = tweet.length - commentary.length;
+        const availableForComment = maxLen - overhead - 3;
+        if (availableForComment > 20) {
+            tweet = buildTweet(item.title, commentary.slice(0, availableForComment) + '...', hashtags);
+        } else {
+            // Drop commentary entirely
+            tweet = buildTweet(item.title, '', hashtags);
+        }
     }
 
     // If still too long, drop hashtags
     if (tweet.length > maxLen) {
-        tweet = template(item.title, '', link);
-        if (tweet.length > maxLen) {
-            const overhead = tweet.length - item.title.length;
-            const availableForTitle = maxLen - overhead - 3;
-            tweet = template(item.title.slice(0, availableForTitle) + '...', '', link);
+        tweet = buildTweet(item.title, commentary, '');
+    }
+
+    // If still too long, truncate title
+    if (tweet.length > maxLen) {
+        const overhead = tweet.length - item.title.length;
+        const availableForTitle = maxLen - overhead - 3;
+        tweet = buildTweet(item.title.slice(0, availableForTitle) + '...', commentary, '');
+    }
+
+    // Last resort: title + link only
+    if (tweet.length > maxLen) {
+        const titleOnly = item.title + link;
+        if (titleOnly.length > maxLen) {
+            const available = maxLen - link.length - 3;
+            tweet = item.title.slice(0, available) + '...' + link;
+        } else {
+            tweet = titleOnly;
         }
     }
 
@@ -302,8 +375,9 @@ export class AegisTwitterService extends Service {
                 return;
             }
 
-            // If no sourceUrl and we have a contributor principal, fetch the individual briefing
-            if (!item.sourceUrl && item.contributorPrincipal) {
+            // If we have a contributor principal, fetch the individual briefing
+            // for sourceUrl and content (used for LLM commentary)
+            if (item.contributorPrincipal) {
                 try {
                     const indBriefing = await fetchIndividualBriefing(item.contributorPrincipal);
                     if (indBriefing?.items) {
@@ -312,19 +386,25 @@ export class AegisTwitterService extends Service {
                         const matchedItem = indBriefing.items.find(
                             i => normalizeTitle(i.title) === normalizeTitle(item.title)
                         );
-                        if (matchedItem?.sourceUrl) {
-                            item.sourceUrl = matchedItem.sourceUrl;
-                            logger.info(`[AegisTwitter] Found sourceUrl from individual briefing: ${matchedItem.sourceUrl}`);
+                        if (matchedItem) {
+                            if (matchedItem.sourceUrl && !item.sourceUrl) {
+                                item.sourceUrl = matchedItem.sourceUrl;
+                                logger.info(`[AegisTwitter] Found sourceUrl from individual briefing: ${matchedItem.sourceUrl}`);
+                            }
+                            if (matchedItem.content && !item.content) {
+                                item.content = matchedItem.content;
+                                logger.info(`[AegisTwitter] Found content from individual briefing (${matchedItem.content.length} chars)`);
+                            }
                         } else {
-                            logger.info(`[AegisTwitter] No matching sourceUrl in individual briefing (${indBriefing.items.length} items checked)`);
+                            logger.info(`[AegisTwitter] No matching item in individual briefing (${indBriefing.items.length} items checked)`);
                         }
                     }
                 } catch (error: any) {
-                    logger.warn(`[AegisTwitter] Failed to fetch individual briefing for sourceUrl: ${error.message}`);
+                    logger.warn(`[AegisTwitter] Failed to fetch individual briefing: ${error.message}`);
                 }
             }
 
-            logger.info(`[AegisTwitter] Best item: "${item.title.slice(0, 60)}..." score=${item.score} sourceUrl=${item.sourceUrl || 'none'}`);
+            logger.info(`[AegisTwitter] Best item: "${item.title.slice(0, 60)}..." score=${item.score} sourceUrl=${item.sourceUrl || 'none'} content=${item.content ? item.content.length + ' chars' : 'none'}`);
 
             // Skip if we already tweeted this
             if (wasTweeted(item.title)) {
@@ -332,7 +412,10 @@ export class AegisTwitterService extends Service {
                 return;
             }
 
-            const tweet = formatTweet(item);
+            // Generate LLM commentary for the briefing item
+            const commentary = await generateCommentary(runtime, item);
+
+            const tweet = formatTweet(item, commentary);
 
             if (TWITTER_POST_CONFIG.DRY_RUN) {
                 logger.info(`[AegisTwitter] DRY RUN would post (${tweet.length} chars):\n${tweet}`);
