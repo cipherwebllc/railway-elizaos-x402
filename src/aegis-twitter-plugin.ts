@@ -41,9 +41,9 @@ function isGlobalBriefing(data: AegisBriefingResponse): data is AegisGlobalBrief
 }
 
 /**
- * Pick the best item to tweet about from a briefing.
- * For global briefings, also returns the contributor's principal
- * so we can fetch the individual briefing for the sourceUrl.
+ * Pick the best un-tweeted item from a briefing.
+ * Skips items that have already been tweeted, falling through to the
+ * next-highest-scored item. Returns null only when ALL items are exhausted.
  */
 function pickBestItem(briefing: AegisBriefingResponse): {
     title: string;
@@ -62,27 +62,40 @@ function pickBestItem(briefing: AegisBriefingResponse): {
         }
         if (allItems.length === 0) return null;
         allItems.sort((a, b) => b.item.briefingScore - a.item.briefingScore);
-        const best = allItems[0];
-        return {
-            title: best.item.title,
-            topics: best.item.topics,
-            score: best.item.briefingScore,
-            sourceUrl: (best.item as any).sourceUrl || undefined,
-            contributorPrincipal: best.principal,
-        };
+
+        // Pick the highest-scored item that hasn't been tweeted yet
+        for (const entry of allItems) {
+            if (!wasTweeted(entry.item.title)) {
+                return {
+                    title: entry.item.title,
+                    topics: entry.item.topics,
+                    score: entry.item.briefingScore,
+                    sourceUrl: (entry.item as any).sourceUrl || undefined,
+                    contributorPrincipal: entry.principal,
+                };
+            }
+        }
+        logger.info(`[AegisTwitter] All ${allItems.length} items already tweeted`);
+        return null;
     } else {
         if (!briefing.items || briefing.items.length === 0) return null;
         const sorted = [...briefing.items].sort(
             (a, b) => b.briefingScore - a.briefingScore
         );
-        const best = sorted[0];
-        return {
-            title: best.title,
-            topics: best.topics,
-            score: best.briefingScore,
-            sourceUrl: best.sourceUrl,
-            content: best.content,
-        };
+
+        for (const item of sorted) {
+            if (!wasTweeted(item.title)) {
+                return {
+                    title: item.title,
+                    topics: item.topics,
+                    score: item.briefingScore,
+                    sourceUrl: item.sourceUrl,
+                    content: item.content,
+                };
+            }
+        }
+        logger.info(`[AegisTwitter] All ${sorted.length} items already tweeted`);
+        return null;
     }
 }
 
@@ -325,7 +338,12 @@ export class AegisTwitterService extends Service {
         const interval = this.getRandomInterval();
         logger.info(`[AegisTwitter] Next post in ${(interval / 60000).toFixed(0)} minutes`);
         this.timer = setTimeout(async () => {
-            await this.postBriefingTweet(runtime);
+            try {
+                await this.postBriefingTweet(runtime);
+            } catch (error: any) {
+                // Catch-all so the timer chain never breaks
+                logger.error(`[AegisTwitter] Unhandled error in postBriefingTweet: ${error.message}`);
+            }
             this.scheduleNext(runtime);
         }, interval);
     }
@@ -405,12 +423,6 @@ export class AegisTwitterService extends Service {
             }
 
             logger.info(`[AegisTwitter] Best item: "${item.title.slice(0, 60)}..." score=${item.score} sourceUrl=${item.sourceUrl || 'none'} content=${item.content ? item.content.length + ' chars' : 'none'}`);
-
-            // Skip if we already tweeted this
-            if (wasTweeted(item.title)) {
-                logger.info(`[AegisTwitter] Skipping already tweeted: "${item.title.slice(0, 50)}..."`);
-                return;
-            }
 
             // Generate LLM commentary for the briefing item
             const commentary = await generateCommentary(runtime, item);
