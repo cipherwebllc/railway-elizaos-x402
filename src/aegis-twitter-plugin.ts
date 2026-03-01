@@ -59,6 +59,27 @@ function isGlobalBriefing(data: AegisBriefingResponse): data is AegisGlobalBrief
 }
 
 /**
+ * Clean a title from scraped web content.
+ * Removes navigation text, excessive whitespace, and truncates at first newline.
+ */
+function cleanTitle(raw: string): string {
+    // Take only the first line (scraped titles often include nav text after newline)
+    let title = raw.split('\n')[0].trim();
+    // Remove common scraped artifacts
+    title = title
+        .replace(/Skip to content.*$/i, '')
+        .replace(/Navigation.*$/i, '')
+        .replace(/\s*[·|–—-]\s*GitHub\s*$/i, '')  // "Title · GitHub" → "Title"
+        .replace(/\s{2,}/g, ' ')  // collapse multiple spaces
+        .trim();
+    // Limit to reasonable tweet title length
+    if (title.length > 150) {
+        title = title.slice(0, 147) + '...';
+    }
+    return title || raw.split('\n')[0].trim().slice(0, 100);
+}
+
+/**
  * Pick the best un-tweeted item from a briefing.
  * Skips items that have already been tweeted, falling through to the
  * next-highest-scored item. Returns null only when ALL items are exhausted.
@@ -83,9 +104,10 @@ function pickBestItem(briefing: AegisBriefingResponse): {
 
         // Pick the highest-scored item that hasn't been tweeted yet
         for (const entry of allItems) {
-            if (!wasTweeted(entry.item.title)) {
+            const title = cleanTitle(entry.item.title);
+            if (!wasTweeted(title)) {
                 return {
-                    title: entry.item.title,
+                    title,
                     topics: entry.item.topics,
                     score: entry.item.briefingScore,
                     sourceUrl: (entry.item as any).sourceUrl || undefined,
@@ -102,9 +124,10 @@ function pickBestItem(briefing: AegisBriefingResponse): {
         );
 
         for (const item of sorted) {
-            if (!wasTweeted(item.title)) {
+            const title = cleanTitle(item.title);
+            if (!wasTweeted(title)) {
                 return {
-                    title: item.title,
+                    title,
                     topics: item.topics,
                     score: item.briefingScore,
                     sourceUrl: item.sourceUrl,
@@ -472,6 +495,14 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
             logger.warn('[AegisTwitter] 401 Unauthorized — will retry client init next cycle');
         } else if (error.code === 429) {
             logger.warn('[AegisTwitter] 429 Rate limited — will retry next cycle');
+        } else if (error.code === 503 || error.status === 503 || error.message?.includes('503')) {
+            logger.warn('[AegisTwitter] 503 Service Unavailable — scheduling retry in 5 minutes');
+            // Schedule a one-off retry after 5 minutes for transient Twitter outages
+            setTimeout(() => {
+                intervalTick().catch((e) => {
+                    logger.error(`[AegisTwitter] 503 retry failed: ${e.message}`);
+                });
+            }, 5 * 60 * 1000);
         }
     }
 }
