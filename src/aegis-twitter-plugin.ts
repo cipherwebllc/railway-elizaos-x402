@@ -333,6 +333,8 @@ let globalTwitterClient: TwitterApi | null = null;
 let globalInitError: string | null = null;
 let isPostingInProgress = false;
 let cycleCount = 0;
+let consecutive503Count = 0;  // Track consecutive 503 errors
+const MAX_503_RETRIES = 2;    // Max one-off retries for 503
 
 /**
  * Try to (re-)initialize the Twitter client if it's not available.
@@ -470,6 +472,7 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
         // Post tweet
         const result = await globalTwitterClient!.v2.tweet(tweet);
         markAsTweeted(item.title);
+        consecutive503Count = 0;  // Reset on success
 
         const tweetId = result.data?.id;
         logger.info(`[AegisTwitter] Posted tweet${tweetId ? ` id=${tweetId}` : ''} (${tweet.length} chars)`);
@@ -496,13 +499,18 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
         } else if (error.code === 429) {
             logger.warn('[AegisTwitter] 429 Rate limited — will retry next cycle');
         } else if (error.code === 503 || error.status === 503 || error.message?.includes('503')) {
-            logger.warn('[AegisTwitter] 503 Service Unavailable — scheduling retry in 5 minutes');
-            // Schedule a one-off retry after 5 minutes for transient Twitter outages
-            setTimeout(() => {
-                intervalTick().catch((e) => {
-                    logger.error(`[AegisTwitter] 503 retry failed: ${e.message}`);
-                });
-            }, 5 * 60 * 1000);
+            consecutive503Count++;
+            if (consecutive503Count <= MAX_503_RETRIES) {
+                const delayMin = consecutive503Count * 10;  // 10min, 20min
+                logger.warn(`[AegisTwitter] 503 Service Unavailable (${consecutive503Count}/${MAX_503_RETRIES}) — retry in ${delayMin} min`);
+                setTimeout(() => {
+                    intervalTick().catch((e) => {
+                        logger.error(`[AegisTwitter] 503 retry failed: ${e.message}`);
+                    });
+                }, delayMin * 60 * 1000);
+            } else {
+                logger.error(`[AegisTwitter] 503 persists after ${MAX_503_RETRIES} retries — waiting for next scheduled cycle. Check Twitter API status or Developer account.`);
+            }
         }
     }
 }
