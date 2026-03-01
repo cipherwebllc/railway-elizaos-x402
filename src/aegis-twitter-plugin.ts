@@ -256,16 +256,15 @@ function formatTweet(item: {
 
 // ============================================
 // Track recently tweeted titles to avoid duplicates
-// Entries expire after TWEETED_EXPIRY_MS so articles can be re-posted
-// once the briefing refreshes with new content.
+// Entries track timestamp so we can enforce a minimum re-post gap.
 // ============================================
-const TWEETED_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MIN_REPOST_GAP_MS = 6 * 60 * 60 * 1000; // 6 hours minimum between re-posting same item
 const recentlyTweeted = new Map<string, number>(); // title → timestamp
-const MAX_RECENT = 50;
+const MAX_RECENT = 100;
 
 function markAsTweeted(title: string): void {
     recentlyTweeted.set(title, Date.now());
-    // Cap size
+    // Cap size by removing oldest entries
     if (recentlyTweeted.size > MAX_RECENT) {
         const oldest = recentlyTweeted.keys().next().value;
         if (oldest) recentlyTweeted.delete(oldest);
@@ -275,25 +274,233 @@ function markAsTweeted(title: string): void {
 function wasTweeted(title: string): boolean {
     const ts = recentlyTweeted.get(title);
     if (ts === undefined) return false;
-    // Expire after 24 hours
-    if (Date.now() - ts > TWEETED_EXPIRY_MS) {
+    // Allow re-posting after the minimum gap
+    if (Date.now() - ts > MIN_REPOST_GAP_MS) {
         recentlyTweeted.delete(title);
         return false;
     }
     return true;
 }
 
+/**
+ * Clear all entries from recentlyTweeted that are older than MIN_REPOST_GAP_MS.
+ * Returns the number of entries cleared.
+ */
+function expireOldTweets(): number {
+    const now = Date.now();
+    let cleared = 0;
+    for (const [title, ts] of recentlyTweeted) {
+        if (now - ts > MIN_REPOST_GAP_MS) {
+            recentlyTweeted.delete(title);
+            cleared++;
+        }
+    }
+    return cleared;
+}
+
 // ============================================
 // Service: Aegis Twitter Poster (Direct twitter-api-v2)
 // ============================================
+
+// Module-level interval handle so it persists even if service instance
+// gets garbage-collected or stop() is called by the framework.
+let globalIntervalHandle: ReturnType<typeof setInterval> | null = null;
+let globalRuntime: IAgentRuntime | null = null;
+let globalTwitterClient: TwitterApi | null = null;
+let globalInitError: string | null = null;
+let isPostingInProgress = false;
+let cycleCount = 0;
+
+/**
+ * Try to (re-)initialize the Twitter client if it's not available.
+ */
+function tryInitClient(runtime: IAgentRuntime): boolean {
+    if (globalTwitterClient) return true;
+
+    const apiKey = runtime.getSetting('TWITTER_API_KEY');
+    const apiSecretKey = runtime.getSetting('TWITTER_API_SECRET_KEY');
+    const accessToken = runtime.getSetting('TWITTER_ACCESS_TOKEN');
+    const accessTokenSecret = runtime.getSetting('TWITTER_ACCESS_TOKEN_SECRET');
+
+    if (!apiKey || !apiSecretKey || !accessToken || !accessTokenSecret) {
+        return false;
+    }
+
+    try {
+        globalTwitterClient = new TwitterApi({
+            appKey: apiKey,
+            appSecret: apiSecretKey,
+            accessToken: accessToken,
+            accessSecret: accessTokenSecret,
+        });
+        globalInitError = null;
+        logger.info('[AegisTwitter] Twitter client re-initialized successfully');
+        return true;
+    } catch (error: any) {
+        globalInitError = error.message;
+        logger.warn(`[AegisTwitter] Twitter re-init failed: ${error.message}`);
+        return false;
+    }
+}
+
+/**
+ * Core tweet posting logic. Called by the interval timer.
+ */
+async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
+    let currentItemTitle: string | null = null;
+    try {
+        // Heartbeat / diagnostic log every cycle
+        cycleCount++;
+        logger.info(`[AegisTwitter] === Cycle #${cycleCount} | tweeted=${recentlyTweeted.size} items tracked | client=${globalTwitterClient ? 'ready' : 'null'} ===`);
+
+        logger.info('[AegisTwitter] Fetching briefing for tweet...');
+        const briefing = await withTimeout(
+            fetchAegisBriefing(),
+            30_000,
+            'Aegis briefing fetch',
+        );
+
+        // Count total available items for diagnostics
+        let totalItems = 0;
+        if (isGlobalBriefing(briefing)) {
+            for (const c of briefing.contributors) {
+                totalItems += c.topItems.length;
+            }
+        } else if (briefing.items) {
+            totalItems = briefing.items.length;
+        }
+
+        let item = pickBestItem(briefing);
+
+        // If all items exhausted, expire old entries and retry
+        if (!item) {
+            const cleared = expireOldTweets();
+            logger.info(`[AegisTwitter] All ${totalItems} items already tweeted. Expired ${cleared} old entries, retrying...`);
+            item = pickBestItem(briefing);
+        }
+
+        // Still nothing? Clear ALL history and pick top item
+        if (!item) {
+            logger.info(`[AegisTwitter] Still no items after expiry. Clearing all ${recentlyTweeted.size} entries.`);
+            recentlyTweeted.clear();
+            item = pickBestItem(briefing);
+        }
+
+        if (!item) {
+            logger.warn(`[AegisTwitter] No items in briefing at all (totalItems=${totalItems})`);
+            return;
+        }
+        currentItemTitle = item.title;
+
+        // If we have a contributor principal, fetch the individual briefing
+        // for sourceUrl and content (used for LLM commentary)
+        if (item.contributorPrincipal) {
+            try {
+                const indBriefing = await withTimeout(
+                    fetchIndividualBriefing(item.contributorPrincipal),
+                    30_000,
+                    'Individual briefing fetch',
+                );
+                if (indBriefing?.items) {
+                    const normalizeTitle = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase();
+                    const matchedItem = indBriefing.items.find(
+                        i => normalizeTitle(i.title) === normalizeTitle(item!.title)
+                    );
+                    if (matchedItem) {
+                        if (matchedItem.sourceUrl && !item.sourceUrl) {
+                            item.sourceUrl = matchedItem.sourceUrl;
+                            logger.info(`[AegisTwitter] Found sourceUrl: ${matchedItem.sourceUrl}`);
+                        }
+                        if (matchedItem.content && !item.content) {
+                            item.content = matchedItem.content;
+                            logger.info(`[AegisTwitter] Found content (${matchedItem.content.length} chars)`);
+                        }
+                    }
+                }
+            } catch (error: any) {
+                logger.warn(`[AegisTwitter] Individual briefing fetch failed: ${error.message}`);
+            }
+        }
+
+        logger.info(`[AegisTwitter] Selected: "${item.title.slice(0, 60)}..." score=${item.score} url=${item.sourceUrl || 'none'}`);
+
+        // Generate LLM commentary for the briefing item
+        const commentary = await generateCommentary(runtime, item);
+
+        const tweet = formatTweet(item, commentary);
+
+        if (TWITTER_POST_CONFIG.DRY_RUN) {
+            logger.info(`[AegisTwitter] DRY RUN (${tweet.length} chars):\n${tweet}`);
+            markAsTweeted(item.title);
+            return;
+        }
+
+        // Ensure Twitter client is available
+        if (!globalTwitterClient) {
+            const ok = tryInitClient(runtime);
+            if (!ok) {
+                logger.warn(`[AegisTwitter] No Twitter client — last error: ${globalInitError || 'unknown'}`);
+                return;
+            }
+        }
+
+        // Post tweet
+        const result = await globalTwitterClient!.v2.tweet(tweet);
+        markAsTweeted(item.title);
+
+        const tweetId = result.data?.id;
+        logger.info(`[AegisTwitter] Posted tweet${tweetId ? ` id=${tweetId}` : ''} (${tweet.length} chars)`);
+    } catch (error: any) {
+        logger.error(`[AegisTwitter] Failed to post: ${error.message}`);
+        let apiDetail = '';
+        if (error.data) {
+            try {
+                apiDetail = JSON.stringify(error.data);
+                logger.error(`[AegisTwitter] API response: ${apiDetail}`);
+            } catch { /* ignore */ }
+        }
+        if (error.code === 403) {
+            if (apiDetail.includes('duplicate') || apiDetail.includes('Duplicate')) {
+                logger.warn('[AegisTwitter] 403 duplicate — marking item as tweeted');
+                if (currentItemTitle) markAsTweeted(currentItemTitle);
+            } else {
+                logger.error('[AegisTwitter] 403 Forbidden — check app permissions (Read and Write required)');
+            }
+        } else if (error.code === 401) {
+            globalTwitterClient = null;
+            globalInitError = error.message;
+            logger.warn('[AegisTwitter] 401 Unauthorized — will retry client init next cycle');
+        } else if (error.code === 429) {
+            logger.warn('[AegisTwitter] 429 Rate limited — will retry next cycle');
+        }
+    }
+}
+
+/**
+ * The interval callback. Guards against overlapping executions.
+ */
+async function intervalTick(): Promise<void> {
+    if (isPostingInProgress) {
+        logger.info('[AegisTwitter] Previous cycle still in progress, skipping');
+        return;
+    }
+    if (!globalRuntime) {
+        logger.warn('[AegisTwitter] No runtime available, skipping cycle');
+        return;
+    }
+    isPostingInProgress = true;
+    try {
+        await postBriefingTweet(globalRuntime);
+    } catch (error: any) {
+        logger.error(`[AegisTwitter] Unhandled error in cycle: ${error.message}`);
+    } finally {
+        isPostingInProgress = false;
+    }
+}
+
 export class AegisTwitterService extends Service {
     static serviceType = 'aegis-twitter';
     capabilityDescription = 'Posts Aegis D2A briefing highlights to Twitter/X periodically';
-
-    private timer: ReturnType<typeof setTimeout> | null = null;
-    private running = false;
-    private twitterClient: TwitterApi | null = null;
-    private initError: string | null = null;
 
     static async start(runtime: IAgentRuntime): Promise<AegisTwitterService> {
         const service = new AegisTwitterService(runtime);
@@ -315,32 +522,46 @@ export class AegisTwitterService extends Service {
             if (!apiSecretKey) missing.push('TWITTER_API_SECRET_KEY');
             if (!accessToken) missing.push('TWITTER_ACCESS_TOKEN');
             if (!accessTokenSecret) missing.push('TWITTER_ACCESS_TOKEN_SECRET');
-            logger.warn(`[AegisTwitter] Missing credentials: ${missing.join(', ')} — service will not post`);
+            logger.warn(`[AegisTwitter] Missing credentials: ${missing.join(', ')} — will not post`);
             return service;
         }
 
-        // Initialize twitter-api-v2 directly (bypass @elizaos/plugin-twitter)
-        // Skip v2.me() validation — it consumes rate limit on every deploy.
-        // Credentials will be validated on the first tweet attempt.
+        // Initialize twitter-api-v2 client (module-level so it survives stop() calls)
         logger.info('[AegisTwitter] Creating Twitter API v2 client...');
-        service.twitterClient = new TwitterApi({
+        globalTwitterClient = new TwitterApi({
             appKey: apiKey,
             appSecret: apiSecretKey,
             accessToken: accessToken,
             accessSecret: accessTokenSecret,
         });
-        logger.info('[AegisTwitter] Twitter client created (credentials will be validated on first post)');
+        globalRuntime = runtime;
+        logger.info('[AegisTwitter] Twitter client created');
 
-        service.running = true;
-
-        if (TWITTER_POST_CONFIG.POST_ON_STARTUP) {
-            setTimeout(() => service.postBriefingTweet(runtime), 5_000);
+        // Clear any previous interval (in case start() is called multiple times)
+        if (globalIntervalHandle) {
+            clearInterval(globalIntervalHandle);
+            globalIntervalHandle = null;
         }
 
-        service.scheduleNext(runtime);
+        // Use a fixed interval. Average of min/max, converted to ms.
+        const intervalMs = ((TWITTER_POST_CONFIG.INTERVAL_MIN + TWITTER_POST_CONFIG.INTERVAL_MAX) / 2) * 60 * 1000;
+
+        if (TWITTER_POST_CONFIG.POST_ON_STARTUP) {
+            // Post immediately (with small delay for other services to init)
+            setTimeout(() => intervalTick(), 10_000);
+        }
+
+        // Start the repeating interval — this is independent of the service instance
+        globalIntervalHandle = setInterval(() => {
+            intervalTick().catch((e) => {
+                logger.error(`[AegisTwitter] Interval tick error: ${e.message}`);
+            });
+        }, intervalMs);
+
         logger.info(
-            `[AegisTwitter] Started — interval ${TWITTER_POST_CONFIG.INTERVAL_MIN}-${TWITTER_POST_CONFIG.INTERVAL_MAX} min` +
+            `[AegisTwitter] Started — interval every ${(intervalMs / 60000).toFixed(0)} min` +
             `${TWITTER_POST_CONFIG.DRY_RUN ? ' (DRY RUN)' : ''}` +
+            `${TWITTER_POST_CONFIG.POST_ON_STARTUP ? ' (posting on startup)' : ''}` +
             ` — client ready`
         );
 
@@ -348,181 +569,18 @@ export class AegisTwitterService extends Service {
     }
 
     static async stop(_runtime: IAgentRuntime): Promise<void> {
-        // Instance cleanup handled by instance stop()
+        // Intentionally do NOT clear the interval here.
+        // ElizaOS may call this during lifecycle events, and we want
+        // the interval to keep running.
+        logger.info('[AegisTwitter] static stop() called (interval continues)');
     }
 
     async stop(): Promise<void> {
-        this.running = false;
-        if (this.timer) {
-            clearTimeout(this.timer);
-            this.timer = null;
-        }
-        logger.info('[AegisTwitter] Stopped');
-    }
-
-    private getRandomInterval(): number {
-        const min = TWITTER_POST_CONFIG.INTERVAL_MIN * 60 * 1000;
-        const max = TWITTER_POST_CONFIG.INTERVAL_MAX * 60 * 1000;
-        return min + Math.random() * (max - min);
-    }
-
-    private scheduleNext(runtime: IAgentRuntime): void {
-        if (!this.running) return;
-        const interval = this.getRandomInterval();
-        logger.info(`[AegisTwitter] Next post in ${(interval / 60000).toFixed(0)} minutes`);
-        this.timer = setTimeout(async () => {
-            try {
-                await this.postBriefingTweet(runtime);
-            } catch (error: any) {
-                // Catch-all so the timer chain never breaks
-                logger.error(`[AegisTwitter] Unhandled error in postBriefingTweet: ${error.message}`);
-            }
-            this.scheduleNext(runtime);
-        }, interval);
-    }
-
-    /**
-     * Try to (re-)initialize the Twitter client if it's not available.
-     */
-    private async tryInitClient(runtime: IAgentRuntime): Promise<boolean> {
-        if (this.twitterClient) return true;
-
-        const apiKey = runtime.getSetting('TWITTER_API_KEY');
-        const apiSecretKey = runtime.getSetting('TWITTER_API_SECRET_KEY');
-        const accessToken = runtime.getSetting('TWITTER_ACCESS_TOKEN');
-        const accessTokenSecret = runtime.getSetting('TWITTER_ACCESS_TOKEN_SECRET');
-
-        if (!apiKey || !apiSecretKey || !accessToken || !accessTokenSecret) {
-            return false;
-        }
-
-        try {
-            const client = new TwitterApi({
-                appKey: apiKey,
-                appSecret: apiSecretKey,
-                accessToken: accessToken,
-                accessSecret: accessTokenSecret,
-            });
-            // Quick validation - don't call me() each time, just try to post
-            this.twitterClient = client;
-            this.initError = null;
-            logger.info('[AegisTwitter] Twitter client re-initialized successfully');
-            return true;
-        } catch (error: any) {
-            this.initError = error.message;
-            logger.warn(`[AegisTwitter] Twitter re-init failed: ${error.message}`);
-            return false;
-        }
-    }
-
-    private async postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
-        let currentItemTitle: string | null = null;
-        try {
-            logger.info('[AegisTwitter] Fetching briefing for tweet...');
-            const briefing = await withTimeout(
-                fetchAegisBriefing(),
-                30_000,
-                'Aegis briefing fetch',
-            );
-
-            const item = pickBestItem(briefing);
-            if (!item) {
-                logger.warn('[AegisTwitter] No items in briefing to tweet');
-                return;
-            }
-            currentItemTitle = item.title;
-
-            // If we have a contributor principal, fetch the individual briefing
-            // for sourceUrl and content (used for LLM commentary)
-            if (item.contributorPrincipal) {
-                try {
-                    const indBriefing = await withTimeout(
-                        fetchIndividualBriefing(item.contributorPrincipal),
-                        30_000,
-                        'Individual briefing fetch',
-                    );
-                    if (indBriefing?.items) {
-                        // Match by title (normalize whitespace for comparison)
-                        const normalizeTitle = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase();
-                        const matchedItem = indBriefing.items.find(
-                            i => normalizeTitle(i.title) === normalizeTitle(item.title)
-                        );
-                        if (matchedItem) {
-                            if (matchedItem.sourceUrl && !item.sourceUrl) {
-                                item.sourceUrl = matchedItem.sourceUrl;
-                                logger.info(`[AegisTwitter] Found sourceUrl from individual briefing: ${matchedItem.sourceUrl}`);
-                            }
-                            if (matchedItem.content && !item.content) {
-                                item.content = matchedItem.content;
-                                logger.info(`[AegisTwitter] Found content from individual briefing (${matchedItem.content.length} chars)`);
-                            }
-                        } else {
-                            logger.info(`[AegisTwitter] No matching item in individual briefing (${indBriefing.items.length} items checked)`);
-                        }
-                    }
-                } catch (error: any) {
-                    logger.warn(`[AegisTwitter] Failed to fetch individual briefing: ${error.message}`);
-                }
-            }
-
-            logger.info(`[AegisTwitter] Best item: "${item.title.slice(0, 60)}..." score=${item.score} sourceUrl=${item.sourceUrl || 'none'} content=${item.content ? item.content.length + ' chars' : 'none'}`);
-
-            // Generate LLM commentary for the briefing item
-            const commentary = await generateCommentary(runtime, item);
-
-            const tweet = formatTweet(item, commentary);
-
-            if (TWITTER_POST_CONFIG.DRY_RUN) {
-                logger.info(`[AegisTwitter] DRY RUN would post (${tweet.length} chars):\n${tweet}`);
-                markAsTweeted(item.title);
-                return;
-            }
-
-            // Try to get/re-init the Twitter client
-            if (!this.twitterClient) {
-                const ok = await this.tryInitClient(runtime);
-                if (!ok) {
-                    logger.warn(`[AegisTwitter] No Twitter client available — last error: ${this.initError || 'unknown'}`);
-                    return;
-                }
-            }
-
-            // Post tweet using twitter-api-v2 directly
-            const result = await this.twitterClient!.v2.tweet(tweet);
-            markAsTweeted(item.title);
-
-            const tweetId = result.data?.id;
-            if (tweetId) {
-                logger.info(`[AegisTwitter] Posted tweet id=${tweetId} (${tweet.length} chars)`);
-            } else {
-                logger.info(`[AegisTwitter] Tweet sent (${tweet.length} chars)`);
-            }
-        } catch (error: any) {
-            logger.error(`[AegisTwitter] Failed to post: ${error.message}`);
-            // Log response details for API errors
-            let apiDetail = '';
-            if (error.data) {
-                try {
-                    apiDetail = JSON.stringify(error.data);
-                    logger.error(`[AegisTwitter] API response: ${apiDetail}`);
-                } catch { /* ignore */ }
-            }
-            if (error.code === 403) {
-                // Check if it's a duplicate content error
-                if (apiDetail.includes('duplicate') || apiDetail.includes('Duplicate')) {
-                    logger.warn('[AegisTwitter] 403 duplicate content — marking item as tweeted to skip next cycle');
-                    if (currentItemTitle) markAsTweeted(currentItemTitle);
-                } else {
-                    logger.error('[AegisTwitter] 403 Forbidden — App likely has "Read" permissions only. Go to Developer Portal → App Settings → User authentication settings → change to "Read and Write", then regenerate Access Token & Secret.');
-                }
-            } else if (error.code === 401) {
-                this.twitterClient = null;
-                this.initError = error.message;
-                logger.warn('[AegisTwitter] 401 Unauthorized — will retry client init next cycle');
-            } else if (error.code === 429) {
-                logger.warn('[AegisTwitter] 429 Rate limited — will retry next cycle');
-            }
-        }
+        // Log but keep the interval running. The interval is module-level
+        // and should persist even if the framework disposes the service instance.
+        logger.info('[AegisTwitter] instance stop() called (interval continues)');
+        // Log stack trace so we can diagnose who/what called stop()
+        logger.info(`[AegisTwitter] stop() caller stack: ${new Error().stack?.split('\n').slice(1, 4).join(' <- ')}`);
     }
 }
 
