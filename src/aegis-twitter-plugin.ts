@@ -33,6 +33,24 @@ const TWITTER_POST_CONFIG = {
 };
 
 // ============================================
+// Timeout utility
+// ============================================
+
+/**
+ * Wrap a promise with a timeout. Rejects with an error if the promise
+ * does not settle within `ms` milliseconds.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+        promise.then(
+            (v) => { clearTimeout(timer); resolve(v); },
+            (e) => { clearTimeout(timer); reject(e); },
+        );
+    });
+}
+
+// ============================================
 // Tweet Formatting
 // ============================================
 
@@ -130,11 +148,15 @@ Quality Score: ${item.score.toFixed(1)}/10
 
 Reply with ONLY the commentary line. No quotes, no prefixes, no hashtags.`;
 
-        const result = await runtime.useModel(ModelType.TEXT_SMALL, {
-            prompt,
-            maxTokens: 80,
-            temperature: 0.7,
-        });
+        const result = await withTimeout(
+            runtime.useModel(ModelType.TEXT_SMALL, {
+                prompt,
+                maxTokens: 80,
+                temperature: 0.7,
+            }),
+            30_000,
+            'LLM commentary',
+        );
 
         if (!result || typeof result !== 'string') {
             logger.warn('[AegisTwitter] LLM returned empty/invalid commentary');
@@ -234,20 +256,31 @@ function formatTweet(item: {
 
 // ============================================
 // Track recently tweeted titles to avoid duplicates
+// Entries expire after TWEETED_EXPIRY_MS so articles can be re-posted
+// once the briefing refreshes with new content.
 // ============================================
-const recentlyTweeted = new Set<string>();
+const TWEETED_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+const recentlyTweeted = new Map<string, number>(); // title → timestamp
 const MAX_RECENT = 50;
 
 function markAsTweeted(title: string): void {
-    recentlyTweeted.add(title);
+    recentlyTweeted.set(title, Date.now());
+    // Cap size
     if (recentlyTweeted.size > MAX_RECENT) {
-        const oldest = recentlyTweeted.values().next().value;
+        const oldest = recentlyTweeted.keys().next().value;
         if (oldest) recentlyTweeted.delete(oldest);
     }
 }
 
 function wasTweeted(title: string): boolean {
-    return recentlyTweeted.has(title);
+    const ts = recentlyTweeted.get(title);
+    if (ts === undefined) return false;
+    // Expire after 24 hours
+    if (Date.now() - ts > TWEETED_EXPIRY_MS) {
+        recentlyTweeted.delete(title);
+        return false;
+    }
+    return true;
 }
 
 // ============================================
@@ -383,21 +416,31 @@ export class AegisTwitterService extends Service {
     }
 
     private async postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
+        let currentItemTitle: string | null = null;
         try {
             logger.info('[AegisTwitter] Fetching briefing for tweet...');
-            const briefing = await fetchAegisBriefing();
+            const briefing = await withTimeout(
+                fetchAegisBriefing(),
+                30_000,
+                'Aegis briefing fetch',
+            );
 
             const item = pickBestItem(briefing);
             if (!item) {
                 logger.warn('[AegisTwitter] No items in briefing to tweet');
                 return;
             }
+            currentItemTitle = item.title;
 
             // If we have a contributor principal, fetch the individual briefing
             // for sourceUrl and content (used for LLM commentary)
             if (item.contributorPrincipal) {
                 try {
-                    const indBriefing = await fetchIndividualBriefing(item.contributorPrincipal);
+                    const indBriefing = await withTimeout(
+                        fetchIndividualBriefing(item.contributorPrincipal),
+                        30_000,
+                        'Individual briefing fetch',
+                    );
                     if (indBriefing?.items) {
                         // Match by title (normalize whitespace for comparison)
                         const normalizeTitle = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -457,18 +500,27 @@ export class AegisTwitterService extends Service {
         } catch (error: any) {
             logger.error(`[AegisTwitter] Failed to post: ${error.message}`);
             // Log response details for API errors
+            let apiDetail = '';
             if (error.data) {
                 try {
-                    logger.error(`[AegisTwitter] API response: ${JSON.stringify(error.data)}`);
+                    apiDetail = JSON.stringify(error.data);
+                    logger.error(`[AegisTwitter] API response: ${apiDetail}`);
                 } catch { /* ignore */ }
             }
             if (error.code === 403) {
-                logger.error('[AegisTwitter] 403 Forbidden — App likely has "Read" permissions only. Go to Developer Portal → App Settings → User authentication settings → change to "Read and Write", then regenerate Access Token & Secret.');
-                // Don't reset client — the credentials are valid, just need Write permission
+                // Check if it's a duplicate content error
+                if (apiDetail.includes('duplicate') || apiDetail.includes('Duplicate')) {
+                    logger.warn('[AegisTwitter] 403 duplicate content — marking item as tweeted to skip next cycle');
+                    if (currentItemTitle) markAsTweeted(currentItemTitle);
+                } else {
+                    logger.error('[AegisTwitter] 403 Forbidden — App likely has "Read" permissions only. Go to Developer Portal → App Settings → User authentication settings → change to "Read and Write", then regenerate Access Token & Secret.');
+                }
             } else if (error.code === 401) {
                 this.twitterClient = null;
                 this.initError = error.message;
                 logger.warn('[AegisTwitter] 401 Unauthorized — will retry client init next cycle');
+            } else if (error.code === 429) {
+                logger.warn('[AegisTwitter] 429 Rate limited — will retry next cycle');
             }
         }
     }
