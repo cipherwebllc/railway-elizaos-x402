@@ -10,9 +10,7 @@ import {
     logger,
 } from '@elizaos/core';
 
-// ============================================
-// Configuration
-// ============================================
+// --- Configuration
 const AEGIS_CONFIG = {
     BASE_URL: process.env.AEGIS_BASE_URL || 'https://aegis.dwebxr.xyz',
     // ICP Principal (optional) — when set, fetches that user's briefing;
@@ -30,9 +28,7 @@ const AEGIS_CONFIG = {
     CACHE_TTL: parseInt(process.env.AEGIS_CACHE_TTL || '300000', 10),
 };
 
-// ============================================
-// Types — Individual Briefing (per-principal)
-// ============================================
+// --- Types — Individual Briefing (per-principal)
 export interface AegisBriefingScores {
     originality: number;
     insight: number;
@@ -79,9 +75,7 @@ export interface AegisIndividualBriefing {
     meta?: AegisBriefingMeta;
 }
 
-// ============================================
-// Types — Global Briefing (aggregated)
-// ============================================
+// --- Types — Global Briefing (aggregated)
 export interface AegisGlobalContributorItem {
     title: string;
     topics: string[];
@@ -118,13 +112,11 @@ export interface AegisGlobalBriefing {
 /** Union type for either response shape */
 export type AegisBriefingResponse = AegisIndividualBriefing | AegisGlobalBriefing;
 
-function isGlobalBriefing(data: AegisBriefingResponse): data is AegisGlobalBriefing {
+export function isGlobalBriefing(data: AegisBriefingResponse): data is AegisGlobalBriefing {
     return 'type' in data && data.type === 'global';
 }
 
-// ============================================
-// Simple in-memory cache
-// ============================================
+// --- Simple in-memory cache
 let cachedBriefing: {
     data: AegisBriefingResponse;
     fetchedAt: number;
@@ -143,9 +135,7 @@ function setCachedBriefing(data: AegisBriefingResponse): void {
     cachedBriefing = { data, fetchedAt: Date.now() };
 }
 
-// ============================================
-// x402-aware fetch helper
-// ============================================
+// --- x402-aware fetch helper
 async function createX402Fetch(): Promise<typeof fetch> {
     if (!AEGIS_CONFIG.WALLET_PRIVATE_KEY) {
         logger.info('[Aegis] No wallet key configured - using plain fetch (dev/free mode)');
@@ -193,9 +183,7 @@ async function getX402Fetch(): Promise<typeof fetch> {
     return x402FetchInstance;
 }
 
-// ============================================
-// API Client Functions
-// ============================================
+// --- API Client Functions
 
 /**
  * Fetch briefing from Aegis D2A API.
@@ -316,9 +304,7 @@ export async function checkAegisHealth(): Promise<boolean> {
     }
 }
 
-// ============================================
-// Response Formatting
-// ============================================
+// --- Response Formatting
 
 /**
  * Format an individual (per-principal) briefing for chat.
@@ -433,9 +419,7 @@ export function formatBriefingForChat(
     return formatIndividualBriefing(briefing, limit);
 }
 
-// ============================================
-// Action: AEGIS_BRIEFING
-// ============================================
+// --- Action: AEGIS_BRIEFING
 const aegisBriefingAction: Action = {
     name: 'AEGIS_BRIEFING',
     similes: [
@@ -565,9 +549,7 @@ const aegisBriefingAction: Action = {
     ],
 };
 
-// ============================================
-// Provider: Aegis Briefing Context
-// ============================================
+// --- Provider: Aegis Briefing Context
 const aegisBriefingProvider: Provider = {
     // @ts-ignore - elizaOS Provider name typing
     name: 'aegisBriefingProvider',
@@ -611,9 +593,7 @@ const aegisBriefingProvider: Provider = {
     },
 };
 
-// ============================================
-// Plugin Export
-// ============================================
+// --- Plugin Export
 export const aegisBriefingPlugin: Plugin = {
     name: 'aegis-briefing',
     description:
@@ -621,21 +601,28 @@ export const aegisBriefingPlugin: Plugin = {
         'Fetches global aggregated briefings from all D2A opt-in users, or a specific user briefing when AEGIS_IC_PRINCIPAL is set.',
     actions: [aegisBriefingAction],
     providers: [aegisBriefingProvider],
-    init: async (_config: Record<string, string>) => {
-        const mode = AEGIS_CONFIG.IC_PRINCIPAL ? 'individual' : 'global';
-        logger.info('*** Aegis Briefing Plugin Initialized ***');
-        logger.info(`*** Aegis Base URL: ${AEGIS_CONFIG.BASE_URL} ***`);
-        logger.info(`*** Mode: ${mode}${AEGIS_CONFIG.IC_PRINCIPAL ? ` (principal: ${AEGIS_CONFIG.IC_PRINCIPAL})` : ' (all D2A opt-in users)'} ***`);
-        logger.info(`*** x402 wallet: ${AEGIS_CONFIG.WALLET_PRIVATE_KEY ? 'configured' : 'not set (dev/free mode)'} ***`);
-        logger.info(`*** Cache TTL: ${AEGIS_CONFIG.CACHE_TTL / 1000}s ***`);
+    init: async () => {
+        const mode = AEGIS_CONFIG.IC_PRINCIPAL ? `individual (${AEGIS_CONFIG.IC_PRINCIPAL})` : 'global';
+        const wallet = AEGIS_CONFIG.WALLET_PRIVATE_KEY ? 'configured' : 'not set';
+        logger.info(`[Aegis] Plugin initialized — ${AEGIS_CONFIG.BASE_URL} | mode=${mode} | x402=${wallet} | cacheTTL=${AEGIS_CONFIG.CACHE_TTL / 1000}s`);
 
         try {
             const healthy = await checkAegisHealth();
-            logger.info(`*** Aegis health: ${healthy ? 'OK' : 'UNREACHABLE'} ***`);
+            if (!healthy) logger.warn('[Aegis] Health check: UNREACHABLE');
         } catch {
-            logger.warn('*** Aegis health check failed on startup ***');
+            logger.warn('[Aegis] Health check failed on startup');
         }
     },
 };
 
 export default aegisBriefingPlugin;
+
+// --- Test-only exports ---
+export const _testExports = {
+    getCachedBriefing,
+    setCachedBriefing,
+    formatIndividualBriefing,
+    formatGlobalBriefing,
+    AEGIS_CONFIG,
+    resetCache: () => { cachedBriefing = null; },
+};
