@@ -616,3 +616,13 @@ export const aegisBriefingPlugin: Plugin = {
 };
 
 export default aegisBriefingPlugin;
+
+// --- Test-only exports ---
+export const _testExports = {
+    getCachedBriefing,
+    setCachedBriefing,
+    formatIndividualBriefing,
+    formatGlobalBriefing,
+    AEGIS_CONFIG,
+    resetCache: () => { cachedBriefing = null; },
+};

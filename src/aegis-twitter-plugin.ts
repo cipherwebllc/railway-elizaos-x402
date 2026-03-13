@@ -482,3 +482,42 @@ export const aegisTwitterPlugin: Plugin = {
 };
 
 export default aegisTwitterPlugin;
+
+// --- Test-only exports (used by test suite to exercise real code paths) ---
+export const _testExports = {
+    cleanTitle,
+    pickBestItem,
+    formatTweet,
+    markAsTweeted,
+    wasTweeted,
+    expireOldTweets,
+    recentlyTweeted,
+    withTimeout,
+    generateCommentary,
+    tryInitClient,
+    postBriefingTweet,
+    intervalTick,
+    TWITTER_POST_CONFIG,
+    MIN_REPOST_GAP_MS,
+    MAX_RECENT,
+    getModuleState: () => ({
+        globalIntervalHandle,
+        globalRuntime,
+        globalTwitterClient,
+        globalInitError,
+        isPostingInProgress,
+        cycleCount,
+        consecutive503Count,
+    }),
+    resetModuleState: () => {
+        if (globalIntervalHandle) clearInterval(globalIntervalHandle);
+        globalIntervalHandle = null;
+        globalRuntime = null;
+        globalTwitterClient = null;
+        globalInitError = null;
+        isPostingInProgress = false;
+        cycleCount = 0;
+        consecutive503Count = 0;
+        recentlyTweeted.clear();
+    },
+};
