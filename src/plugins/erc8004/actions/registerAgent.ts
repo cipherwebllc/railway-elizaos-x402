@@ -14,7 +14,7 @@ import {
     parseJSONObjectFromText,
 } from '@elizaos/core';
 import { ERC8004Service } from '../service';
-import { ERC8004_SERVICE_NAME } from '../constants';
+import { ERC8004_SERVICE_NAME, getExplorerTxUrl, DEFAULT_CHAIN_ID } from '../constants';
 import type { RegistrationHandler } from '../types';
 
 /**
@@ -34,21 +34,21 @@ function isRegisterAgentContent(content: RegisterAgentContent): boolean {
     logger.log('Content for registration', JSON.stringify(content));
 
     if (!content.agentId || typeof content.agentId !== 'string') {
-        console.warn('bad agentId');
+        logger.warn('ERC8004 registerAgent: invalid agentId');
         return false;
     }
 
     if (!content.name || typeof content.name !== 'string') {
-        console.warn('bad name');
+        logger.warn('ERC8004 registerAgent: invalid name');
         return false;
     }
 
     if (!content.domain || typeof content.domain !== 'string') {
-        console.warn('bad domain');
+        logger.warn('ERC8004 registerAgent: invalid domain');
         return false;
     }
 
-    console.log('registration content valid');
+    logger.debug('ERC8004 registerAgent: content valid');
     return true;
 }
 
@@ -417,7 +417,7 @@ Example response:
 
 🔗 **Transaction:**
 • TX Hash: \`${result.transactionHash}\`
-• View on BaseScan: https://sepolia.basescan.org/tx/${result.transactionHash}`;
+• View on Explorer: ${getExplorerTxUrl(DEFAULT_CHAIN_ID, result.transactionHash)}`;
 
                 if (callback) {
                     await callback({
@@ -456,7 +456,16 @@ Example response:
             }
         } catch (error) {
             logger.error({ error }, 'Error in registerAgent action:');
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            if (callback) {
+                await callback({
+                    text: `❌ Failed to register agent: ${errorMsg}`,
+                    actions: ['REGISTER_AGENT_ERC8004'],
+                    source: message.content.source,
+                });
+            }
             return {
+                text: `Failed to register agent: ${errorMsg}`,
                 success: false,
                 error: error instanceof Error ? error : new Error(String(error)),
             };

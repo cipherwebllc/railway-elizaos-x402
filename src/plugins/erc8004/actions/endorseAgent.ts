@@ -14,7 +14,7 @@ import {
     parseJSONObjectFromText,
 } from '@elizaos/core';
 import { ERC8004Service } from '../service';
-import { ERC8004_SERVICE_NAME } from '../constants';
+import { ERC8004_SERVICE_NAME, getExplorerTxUrl, DEFAULT_CHAIN_ID } from '../constants';
 
 /**
  * Interface representing the content of an endorsement.
@@ -31,16 +31,16 @@ function isEndorseAgentContent(content: EndorseAgentContent): boolean {
     logger.log('Content for endorsement', JSON.stringify(content));
 
     if (!content.targetAgentId || typeof content.targetAgentId !== 'string') {
-        console.warn('bad targetAgentId');
+        logger.warn('ERC8004 endorseAgent: invalid targetAgentId');
         return false;
     }
 
     if (!content.amount || (typeof content.amount !== 'string' && typeof content.amount !== 'number')) {
-        console.warn('bad amount', typeof content.amount, content.amount);
+        logger.warn({ type: typeof content.amount, value: content.amount }, 'ERC8004 endorseAgent: invalid amount');
         return false;
     }
 
-    console.log('endorsement content valid');
+    logger.debug('ERC8004 endorseAgent: content valid');
     return true;
 }
 
@@ -158,7 +158,7 @@ export const endorseAgentAction: Action = {
 
 🔗 **Transaction:**
 • TX Hash: \`${result.transactionHash}\`
-• View on BaseScan: https://sepolia.basescan.org/tx/${result.transactionHash}`;
+• View on Explorer: ${getExplorerTxUrl(DEFAULT_CHAIN_ID, result.transactionHash)}`;
 
                 if (callback) {
                     await callback({
@@ -196,7 +196,16 @@ export const endorseAgentAction: Action = {
             }
         } catch (error) {
             logger.error({ error }, 'Error in endorseAgent action:');
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            if (callback) {
+                await callback({
+                    text: `❌ Failed to endorse agent: ${errorMsg}`,
+                    actions: ['ENDORSE_AGENT_ERC8004'],
+                    source: message.content.source,
+                });
+            }
             return {
+                text: `Failed to endorse agent: ${errorMsg}`,
                 success: false,
                 error: error instanceof Error ? error : new Error(String(error)),
             };

@@ -30,11 +30,11 @@ function isCheckReputationContent(content: CheckReputationContent): boolean {
     logger.log('Content for reputation check', JSON.stringify(content) as any);
 
     if (!content.agentId || typeof content.agentId !== 'string') {
-        console.warn('bad agentId');
+        logger.warn('ERC8004 checkReputation: invalid agentId');
         return false;
     }
 
-    console.log('reputation check content valid');
+    logger.debug('ERC8004 checkReputation: content valid');
     return true;
 }
 
@@ -193,7 +193,16 @@ The agent may not be registered yet. To register, use the REGISTER_AGENT action.
             }
         } catch (error) {
             logger.error({ error }, 'Error in checkReputation action:');
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            if (callback) {
+                await callback({
+                    text: `❌ Failed to check reputation: ${errorMsg}`,
+                    actions: ['CHECK_REPUTATION_ERC8004'],
+                    source: message.content.source,
+                });
+            }
             return {
+                text: `Failed to check reputation: ${errorMsg}`,
                 success: false,
                 error: error instanceof Error ? error : new Error(String(error)),
             };
