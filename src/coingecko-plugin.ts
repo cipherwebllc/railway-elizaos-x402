@@ -2,7 +2,6 @@ import type { Plugin } from '@elizaos/core';
 import {
   type Action,
   type ActionResult,
-  type Content,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -12,12 +11,7 @@ import {
   type State,
   logger,
 } from '@elizaos/core';
-import { z } from 'zod';
 
-/**
- * CoinGecko API Service
- * Provides cryptocurrency price data using CoinGecko's free API
- */
 export class CoinGeckoService extends Service {
   static serviceType = 'coingecko';
   private baseUrl = 'https://api.coingecko.com/api/v3';
@@ -79,72 +73,12 @@ export class CoinGeckoService extends Service {
       return data[coinId];
     } catch (error) {
       logger.error({ error, coinId, vsCurrency }, 'Error fetching price from CoinGecko');
-      // Return null instead of throwing to prevent crashes
       return null;
     }
   }
 
-  /**
-   * Get detailed coin data including price, market cap, volume, etc.
-   * @param coinId - CoinGecko coin ID
-   */
-  async getCoinData(coinId: string): Promise<any> {
-    try {
-      const url = `${this.baseUrl}/coins/${coinId}?localization=false&tickers=false&community_data=false&developer_data=false`;
-
-      logger.info(`Fetching detailed data for ${coinId}`);
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        if (response.status === 429) {
-          logger.warn(`CoinGecko API rate limit reached for ${coinId}, skipping coin data fetch`);
-          return null;
-        }
-        throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      logger.error({ error, coinId }, 'Error fetching coin data from CoinGecko');
-      return null;
-    }
-  }
-
-  /**
-   * Search for coins by name or symbol
-   * @param query - Search query
-   */
-  async searchCoins(query: string): Promise<any> {
-    try {
-      const url = `${this.baseUrl}/search?query=${encodeURIComponent(query)}`;
-
-      logger.info(`Searching for: ${query}`);
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        if (response.status === 429) {
-          logger.warn(`CoinGecko API rate limit reached for query ${query}, skipping search`);
-          return null;
-        }
-        throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      logger.error({ error, query }, 'Error searching coins on CoinGecko');
-      return null;
-    }
-  }
 }
 
-/**
- * Get Crypto Price Action
- * Fetches current cryptocurrency prices from CoinGecko
- */
 const getCryptoPriceAction: Action = {
   name: 'GET_CRYPTO_PRICE',
   similes: ['CHECK_PRICE', 'CRYPTO_PRICE', 'GET_PRICE', 'PRICE_CHECK', 'BTC_PRICE', 'ETH_PRICE'],
@@ -153,7 +87,6 @@ const getCryptoPriceAction: Action = {
   validate: async (runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
     const text = message.content.text.toLowerCase();
 
-    // Check for price-related keywords and cryptocurrency mentions
     const priceKeywords = ['price', 'cost', 'worth', 'value', 'how much'];
     const cryptoKeywords = ['btc', 'bitcoin', 'eth', 'ethereum', 'crypto', 'coin', 'token'];
 
@@ -182,8 +115,8 @@ const getCryptoPriceAction: Action = {
 
       const text = message.content.text.toLowerCase();
 
-      // Extract coin from message
-      let coinId = 'bitcoin'; // default
+      let coinId = 'bitcoin';
+
       let coinName = 'Bitcoin';
 
       if (text.includes('btc') || text.includes('bitcoin')) {
@@ -212,10 +145,8 @@ const getCryptoPriceAction: Action = {
         coinName = 'Dogecoin';
       }
 
-      // Fetch price data
       const priceData = await service.getPrice(coinId, 'usd');
 
-      // Check if price data is available
       if (!priceData) {
         await callback({
           text: `Sorry, ${coinName} price data is temporarily unavailable. Please try again later.`,
@@ -230,7 +161,6 @@ const getCryptoPriceAction: Action = {
         };
       }
 
-      // Format response
       const price = priceData.usd;
       const marketCap = priceData.usd_market_cap;
       const volume24h = priceData.usd_24h_vol;
@@ -247,13 +177,11 @@ const getCryptoPriceAction: Action = {
         `💵 24h Volume: $${(volume24h / 1e9).toFixed(2)}B\n` +
         `⏰ Last Updated: ${lastUpdated.toLocaleString()}`;
 
-      const responseContent: Content = {
+      await callback({
         text: responseText,
         actions: ['GET_CRYPTO_PRICE'],
         source: message.content.source,
-      };
-
-      await callback(responseContent);
+      });
 
       return {
         text: `Successfully retrieved ${coinName} price`,
@@ -331,28 +259,9 @@ const getCryptoPriceAction: Action = {
         },
       },
     ],
-    [
-      {
-        name: '{{name1}}',
-        content: {
-          text: 'Check BTC price',
-        },
-      },
-      {
-        name: '{{name2}}',
-        content: {
-          text: 'Bitcoin (BITCOIN) Price Data:\n\n💰 Price: $43,521.00\n📈 24h Change: +2.34%\n📊 Market Cap: $851.23B\n💵 24h Volume: $28.45B\n⏰ Last Updated: 2024-01-15 10:30:00',
-          actions: ['GET_CRYPTO_PRICE'],
-        },
-      },
-    ],
   ],
 };
 
-/**
- * Crypto Price Provider
- * Provides current crypto prices in the agent's context
- */
 const cryptoPriceProvider: Provider = {
   name: 'CRYPTO_PRICE_PROVIDER',
   description: 'Provides current cryptocurrency market prices',
@@ -373,7 +282,6 @@ const cryptoPriceProvider: Provider = {
         };
       }
 
-      // Get prices for major cryptocurrencies
       const coins = ['bitcoin', 'ethereum', 'solana'];
       const prices: Record<string, any> = {};
 
@@ -388,22 +296,17 @@ const cryptoPriceProvider: Provider = {
         }
       }
 
-      // Only include coins with valid price data
       const priceText = Object.entries(prices)
         .filter(([_, data]) => data && data.usd)
         .map(([coin, data]) => `${coin}: $${data.usd.toLocaleString()}`)
         .join(', ');
 
       if (!priceText) {
-        return {
-          text: '',
-          values: {},
-          data: {},
-        };
+        return { text: '', values: {}, data: {} };
       }
 
       return {
-        text: '',
+        text: priceText,
         values: prices,
         data: { lastUpdated: Date.now() },
       };
@@ -418,10 +321,6 @@ const cryptoPriceProvider: Provider = {
   },
 };
 
-/**
- * CoinGecko Plugin
- * Main plugin export that integrates CoinGecko functionality into ElizaOS
- */
 export const coinGeckoPlugin: Plugin = {
   name: 'coingecko',
   description: 'CoinGecko cryptocurrency price data integration',

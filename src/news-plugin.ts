@@ -2,7 +2,6 @@ import type { Plugin } from '@elizaos/core';
 import {
   type Action,
   type ActionResult,
-  type Content,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -11,10 +10,6 @@ import {
   logger,
 } from '@elizaos/core';
 
-/**
- * News Service
- * Provides real-time cryptocurrency news from multiple sources
- */
 export class NewsService extends Service {
   static serviceType = 'news';
 
@@ -72,10 +67,6 @@ export class NewsService extends Service {
   }
 }
 
-/**
- * Get Crypto News Action
- * Fetches latest cryptocurrency news
- */
 const getCryptoNewsAction: Action = {
   name: 'GET_CRYPTO_NEWS',
   similes: ['NEWS', 'LATEST_NEWS', 'CRYPTO_NEWS', 'HEADLINES', 'UPDATES'],
@@ -90,14 +81,7 @@ const getCryptoNewsAction: Action = {
     const hasNewsKeyword = newsKeywords.some(keyword => text.includes(keyword));
     const hasCryptoKeyword = cryptoKeywords.some(keyword => text.includes(keyword));
 
-    // Match if either news keyword is found, or crypto keyword with news context
-    const isNewsQuery = hasNewsKeyword || (hasCryptoKeyword && text.includes('what'));
-
-    if (isNewsQuery) {
-      logger.info(`[GET_CRYPTO_NEWS] Validate returned TRUE for: "${message.content.text}"`);
-    }
-
-    return isNewsQuery;
+    return hasNewsKeyword || (hasCryptoKeyword && text.includes('what'));
   },
 
   handler: async (
@@ -117,7 +101,6 @@ const getCryptoNewsAction: Action = {
         throw new Error('News service not available');
       }
 
-      // Fetch news
       const news = await service.getCryptoCompareNews();
 
       if (news.length === 0) {
@@ -134,7 +117,6 @@ const getCryptoNewsAction: Action = {
         };
       }
 
-      // Format response
       let responseText = `📰 最新の暗号通貨ニュース (${news.length}件):\n\n`;
 
       news.slice(0, 5).forEach((article: any, index: number) => {
@@ -154,13 +136,11 @@ const getCryptoNewsAction: Action = {
 
       responseText += `\n💡 さらに詳しい情報は各リンクをご覧ください。`;
 
-      const responseContent: Content = {
+      await callback({
         text: responseText,
         actions: ['GET_CRYPTO_NEWS'],
         source: message.content.source,
-      };
-
-      await callback(responseContent);
+      });
 
       return {
         text: `Successfully retrieved ${news.length} news articles`,
@@ -266,10 +246,6 @@ const getCryptoNewsAction: Action = {
   ],
 };
 
-/**
- * News Plugin
- * Provides real-time cryptocurrency news functionality
- */
 export const newsPlugin: Plugin = {
   name: 'news',
   description: 'Real-time cryptocurrency news integration (CryptoCompare API)',

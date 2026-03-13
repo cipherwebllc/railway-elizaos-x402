@@ -2,7 +2,6 @@ import type { Plugin } from '@elizaos/core';
 import {
   type Action,
   type ActionResult,
-  type Content,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -11,10 +10,6 @@ import {
   logger,
 } from '@elizaos/core';
 
-/**
- * Japan Regulation Service
- * Provides information on Japanese crypto regulations, tax laws, and compliance
- */
 export class JapanRegulationService extends Service {
   static serviceType = 'jp-regulation';
 
@@ -199,10 +194,6 @@ export class JapanRegulationService extends Service {
   }
 }
 
-/**
- * Get Japan Regulation Info Action
- * Provides Japanese crypto regulation and tax information
- */
 const getJapanRegulationAction: Action = {
   name: 'GET_JP_REGULATION',
   similes: ['TAX_INFO', 'REGULATION', 'FSA', 'JVCEA', 'COMPLIANCE', 'LAW'],
@@ -236,13 +227,7 @@ const getJapanRegulationAction: Action = {
     const hasJapanContext =
       japanKeywords.some((keyword) => text.includes(keyword)) || hasRegulationKeyword;
 
-    const isRegulationQuery = hasRegulationKeyword && hasJapanContext;
-
-    if (isRegulationQuery) {
-      logger.info(`[GET_JP_REGULATION] Validate returned TRUE for: "${message.content.text}"`);
-    }
-
-    return isRegulationQuery;
+    return hasRegulationKeyword && hasJapanContext;
   },
 
   handler: async (
@@ -264,12 +249,10 @@ const getJapanRegulationAction: Action = {
 
       const text = message.content.text.toLowerCase();
 
-      // Determine which information to provide based on query
       let responseText = '';
       let data: any = {};
 
       if (text.includes('税') || text.includes('tax') || text.includes('確定申告') || text.includes('雑所得')) {
-        // Tax information
         const taxInfo = service.getCryptoTaxInfo();
         data = { tax: taxInfo };
 
@@ -289,7 +272,6 @@ const getJapanRegulationAction: Action = {
           responseText += `- **期末時価評価**: ${taxInfo.法人.期末時価評価.例外}\n`;
         }
 
-        // 出典セクション
         responseText += `\n---\n📚 **出典・根拠**\n`;
         taxInfo.個人.出典.forEach((source: any) => {
           responseText += `- 国税庁「${source.タイトル}」(${source.番号})\n`;
@@ -298,10 +280,8 @@ const getJapanRegulationAction: Action = {
           responseText += `- ${source.タイトル}（${source.番号}）\n`;
         });
 
-        // 免責事項
         responseText += service.getDisclaimer();
       } else if (text.includes('jvcea') || text.includes('自主規制')) {
-        // JVCEA guidelines
         const jvceaInfo = service.getJVCEAGuidelines();
         data = { jvcea: jvceaInfo };
 
@@ -317,7 +297,6 @@ const getJapanRegulationAction: Action = {
         responseText += service.getDisclaimer();
 
       } else if (text.includes('fsa') || text.includes('金融庁') || text.includes('資金決済法')) {
-        // FSA regulations
         const fsaInfo = service.getFSARegulations();
         data = { fsa: fsaInfo };
 
@@ -344,7 +323,6 @@ const getJapanRegulationAction: Action = {
         responseText += service.getDisclaimer();
 
       } else {
-        // General regulation overview
         const allInfo = service.getAllRegulationInfo();
         data = allInfo;
 
@@ -365,13 +343,11 @@ const getJapanRegulationAction: Action = {
         responseText += service.getDisclaimer();
       }
 
-      const responseContent: Content = {
+      await callback({
         text: responseText,
         actions: ['GET_JP_REGULATION'],
         source: message.content.source,
-      };
-
-      await callback(responseContent);
+      });
 
       return {
         text: 'Successfully retrieved Japan regulation information',
@@ -461,10 +437,6 @@ const getJapanRegulationAction: Action = {
   ],
 };
 
-/**
- * Japan Regulation Plugin
- * Provides Japanese cryptocurrency regulation and tax information
- */
 export const japanRegulationPlugin: Plugin = {
   name: 'jp-regulation',
   description: 'Japanese cryptocurrency regulation and tax information',
