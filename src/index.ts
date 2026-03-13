@@ -25,7 +25,6 @@ import { alizaCharacter } from "./aliza-character.ts";
 
 import plugin from "./plugin.ts"; // starter plugin
 import { x402Plugin } from "./x402-plugin.ts";
-import { erc8004Plugin } from "./plugins/erc8004/index.ts";
 import { agentCommPlugin } from "./agent-comm-plugin.ts";
 import { aegisBriefingPlugin } from "./aegis-briefing-plugin.ts";
 import { aegisTwitterPlugin } from "./aegis-twitter-plugin.ts";
@@ -46,7 +45,6 @@ const baseAgent: ProjectAgent = {
     exchangeMonitorPlugin,
     x402Plugin,
     agentCommPlugin,  // Agent-to-agent communication with Eliza Cloud
-    // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
 };
@@ -73,7 +71,6 @@ const twoAgent: ProjectAgent = {
     agentCommPlugin,  // Agent-to-agent communication with Eliza Cloud
     aegisBriefingPlugin,  // Aegis D2A Briefing API (x402対応)
     aegisTwitterPlugin,   // Aegis → Twitter 定期ポスト (uses twitter-api-v2 directly)
-    // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
 };
@@ -93,7 +90,6 @@ const alizaAgent: ProjectAgent = {
     // x402Pluginは含めない（課金なし）
     newsPlugin,
     agentCommPlugin,  // Agent-to-agent communication with Eliza Cloud
-    // erc8004Plugin,  // 一時的に無効化 - 複数応答問題のデバッグ
     plugin,
   ],
 };

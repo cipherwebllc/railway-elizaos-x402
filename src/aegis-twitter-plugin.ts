@@ -9,18 +9,14 @@ import { TwitterApi } from 'twitter-api-v2';
 import {
     fetchAegisBriefing,
     fetchIndividualBriefing,
+    isGlobalBriefing,
     type AegisBriefingResponse,
-    type AegisBriefingItem,
-    type AegisGlobalBriefing,
-    type AegisGlobalContributorItem,
 } from './aegis-briefing-plugin.ts';
 
 // Suppress AI SDK warnings that flood Railway logs
 (globalThis as any).AI_SDK_LOG_WARNINGS = false;
 
-// ============================================
-// Configuration
-// ============================================
+// --- Configuration ---
 const TWITTER_POST_CONFIG = {
     // Interval between Aegis briefing tweets (in minutes)
     INTERVAL_MIN: parseInt(process.env.AEGIS_TWEET_INTERVAL_MIN || '120', 10),
@@ -35,14 +31,7 @@ const TWITTER_POST_CONFIG = {
     DRY_RUN: process.env.AEGIS_TWEET_DRY_RUN === 'true',
 };
 
-// ============================================
-// Timeout utility
-// ============================================
-
-/**
- * Wrap a promise with a timeout. Rejects with an error if the promise
- * does not settle within `ms` milliseconds.
- */
+/** Wrap a promise with a timeout. Rejects if not settled within `ms` ms. */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
@@ -53,18 +42,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     });
 }
 
-// ============================================
-// Tweet Formatting
-// ============================================
+// --- Tweet Formatting ---
 
-function isGlobalBriefing(data: AegisBriefingResponse): data is AegisGlobalBriefing {
-    return 'type' in data && (data as any).type === 'global';
-}
-
-/**
- * Clean a title from scraped web content.
- * Removes navigation text, excessive whitespace, and truncates at first newline.
- */
+/** Clean scraped web content from a title (nav text, whitespace, etc.) */
 function cleanTitle(raw: string): string {
     // Take only the first line (scraped titles often include nav text after newline)
     let title = raw.split('\n')[0].trim();
@@ -82,75 +62,57 @@ function cleanTitle(raw: string): string {
     return title || raw.split('\n')[0].trim().slice(0, 100);
 }
 
-/**
- * Pick the best un-tweeted item from a briefing.
- * Skips items that have already been tweeted, falling through to the
- * next-highest-scored item. Returns null only when ALL items are exhausted.
- */
-function pickBestItem(briefing: AegisBriefingResponse): {
+interface TweetCandidate {
     title: string;
     topics: string[];
     score: number;
     sourceUrl?: string;
     content?: string;
     contributorPrincipal?: string;
-} | null {
+}
+
+/** Pick the highest-scored un-tweeted item. Returns null when all exhausted. */
+function pickBestItem(briefing: AegisBriefingResponse): TweetCandidate | null {
+    // Normalize both briefing types into a flat sorted list
+    const candidates: TweetCandidate[] = [];
+
     if (isGlobalBriefing(briefing)) {
-        const allItems: { item: AegisGlobalContributorItem; principal: string }[] = [];
         for (const c of briefing.contributors) {
             for (const item of c.topItems) {
-                allItems.push({ item, principal: c.principal });
-            }
-        }
-        if (allItems.length === 0) return null;
-        allItems.sort((a, b) => b.item.briefingScore - a.item.briefingScore);
-
-        // Pick the highest-scored item that hasn't been tweeted yet
-        for (const entry of allItems) {
-            const title = cleanTitle(entry.item.title);
-            if (!wasTweeted(title)) {
-                return {
-                    title,
-                    topics: entry.item.topics,
-                    score: entry.item.briefingScore,
-                    sourceUrl: (entry.item as any).sourceUrl || undefined,
-                    contributorPrincipal: entry.principal,
-                };
-            }
-        }
-        logger.info(`[AegisTwitter] All ${allItems.length} items already tweeted`);
-        return null;
-    } else {
-        if (!briefing.items || briefing.items.length === 0) return null;
-        const sorted = [...briefing.items].sort(
-            (a, b) => b.briefingScore - a.briefingScore
-        );
-
-        for (const item of sorted) {
-            const title = cleanTitle(item.title);
-            if (!wasTweeted(title)) {
-                return {
-                    title,
+                candidates.push({
+                    title: cleanTitle(item.title),
                     topics: item.topics,
                     score: item.briefingScore,
                     sourceUrl: item.sourceUrl,
-                    content: item.content,
-                };
+                    contributorPrincipal: c.principal,
+                });
             }
         }
-        logger.info(`[AegisTwitter] All ${sorted.length} items already tweeted`);
-        return null;
+    } else if (briefing.items) {
+        for (const item of briefing.items) {
+            candidates.push({
+                title: cleanTitle(item.title),
+                topics: item.topics,
+                score: item.briefingScore,
+                sourceUrl: item.sourceUrl,
+                content: item.content,
+            });
+        }
     }
+
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => b.score - a.score);
+
+    for (const c of candidates) {
+        if (!wasTweeted(c.title)) return c;
+    }
+    logger.info(`[AegisTwitter] All ${candidates.length} items already tweeted`);
+    return null;
 }
 
-// ============================================
-// LLM-based Tweet Commentary Generation
-// ============================================
+// --- LLM Commentary ---
 
-/**
- * Generate a concise analytical commentary for a briefing item using the LLM.
- * Returns an empty string on failure (caller should handle fallback).
- */
+/** Generate a concise LLM commentary for a briefing item. Returns '' on failure. */
 async function generateCommentary(
     runtime: IAgentRuntime,
     item: {
@@ -209,83 +171,42 @@ Reply with ONLY the commentary line. No quotes, no prefixes, no hashtags.`;
     }
 }
 
-/**
- * Format an Aegis briefing item as a tweet with optional LLM commentary.
- */
-function formatTweet(item: {
-    title: string;
-    topics: string[];
-    score: number;
-    sourceUrl?: string;
-    content?: string;
-}, commentary: string = ''): string {
+/** Format a briefing item as a tweet with optional LLM commentary. */
+function formatTweet(item: TweetCandidate, commentary: string = ''): string {
     const maxLen = TWITTER_POST_CONFIG.MAX_TWEET_LENGTH;
-
-    // Build hashtags from topics (up to 3)
+    const link = `\n${item.sourceUrl || 'https://aegis.dwebxr.xyz'}`;
     const hashtags = item.topics
         .slice(0, 3)
         .map(t => `#${t.replace(/[^a-zA-Z0-9_\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/g, '')}`)
         .join(' ');
 
-    const link = item.sourceUrl
-        ? `\n${item.sourceUrl}`
-        : `\nhttps://aegis.dwebxr.xyz`;
+    const truncate = (s: string, max: number) =>
+        s.length <= max ? s : s.slice(0, max - 3) + '...';
 
-    // Build tweet: title + commentary (if available) + hashtags + link
-    const buildTweet = (title: string, comment: string, tags: string) => {
-        const parts = [title];
-        if (comment) parts.push(comment);
-        if (tags) parts.push(tags);
-        return parts.join('\n\n') + link;
-    };
+    const build = (parts: string[]) =>
+        parts.filter(Boolean).join('\n\n') + link;
 
-    // Try with full title + commentary + hashtags
-    let tweet = buildTweet(item.title, commentary, hashtags);
+    // Try progressively simpler formats until it fits
+    const attempts = [
+        () => build([item.title, commentary, hashtags]),
+        () => build([item.title, commentary]),
+        () => build([item.title, hashtags]),
+        () => build([item.title]),
+    ];
 
-    // If too long, try truncating commentary first
-    if (tweet.length > maxLen && commentary) {
-        const overhead = tweet.length - commentary.length;
-        const availableForComment = maxLen - overhead - 3;
-        if (availableForComment > 20) {
-            tweet = buildTweet(item.title, commentary.slice(0, availableForComment) + '...', hashtags);
-        } else {
-            // Drop commentary entirely
-            tweet = buildTweet(item.title, '', hashtags);
-        }
+    for (const attempt of attempts) {
+        const tweet = attempt();
+        if (tweet.length <= maxLen) return tweet;
     }
 
-    // If still too long, drop hashtags
-    if (tweet.length > maxLen) {
-        tweet = buildTweet(item.title, commentary, '');
-    }
-
-    // If still too long, truncate title
-    if (tweet.length > maxLen) {
-        const overhead = tweet.length - item.title.length;
-        const availableForTitle = maxLen - overhead - 3;
-        tweet = buildTweet(item.title.slice(0, availableForTitle) + '...', commentary, '');
-    }
-
-    // Last resort: title + link only
-    if (tweet.length > maxLen) {
-        const titleOnly = item.title + link;
-        if (titleOnly.length > maxLen) {
-            const available = maxLen - link.length - 3;
-            tweet = item.title.slice(0, available) + '...' + link;
-        } else {
-            tweet = titleOnly;
-        }
-    }
-
-    return tweet.trim();
+    // Last resort: truncate title to fit
+    const available = maxLen - link.length;
+    return truncate(item.title, available) + link;
 }
 
-// ============================================
-// Track recently tweeted titles to avoid duplicates
-// Entries track timestamp so we can enforce a minimum re-post gap.
-// ============================================
-const MIN_REPOST_GAP_MS = 6 * 60 * 60 * 1000; // 6 hours minimum between re-posting same item
-const recentlyTweeted = new Map<string, number>(); // title → timestamp
+// --- Recently-tweeted deduplication (title → timestamp, 6h gap) ---
+const MIN_REPOST_GAP_MS = 6 * 60 * 60 * 1000;
+const recentlyTweeted = new Map<string, number>();
 const MAX_RECENT = 100;
 
 function markAsTweeted(title: string): void {
@@ -308,10 +229,7 @@ function wasTweeted(title: string): boolean {
     return true;
 }
 
-/**
- * Clear all entries from recentlyTweeted that are older than MIN_REPOST_GAP_MS.
- * Returns the number of entries cleared.
- */
+/** Remove entries older than MIN_REPOST_GAP_MS. Returns count cleared. */
 function expireOldTweets(): number {
     const now = Date.now();
     let cleared = 0;
@@ -324,126 +242,87 @@ function expireOldTweets(): number {
     return cleared;
 }
 
-// ============================================
-// Service: Aegis Twitter Poster (Direct twitter-api-v2)
-// ============================================
-
-// Module-level interval handle so it persists even if service instance
-// gets garbage-collected or stop() is called by the framework.
+// --- Module-level state (survives service lifecycle / stop() calls) ---
 let globalIntervalHandle: ReturnType<typeof setInterval> | null = null;
 let globalRuntime: IAgentRuntime | null = null;
 let globalTwitterClient: TwitterApi | null = null;
 let globalInitError: string | null = null;
 let isPostingInProgress = false;
 let cycleCount = 0;
-let consecutive503Count = 0;  // Track consecutive 503 errors
-const MAX_503_RETRIES = 2;    // Max one-off retries for 503
+let consecutive503Count = 0;
+const MAX_503_RETRIES = 2;
 
-/**
- * Try to (re-)initialize the Twitter client if it's not available.
- */
+const TWITTER_CRED_KEYS = [
+    'TWITTER_API_KEY', 'TWITTER_API_SECRET_KEY',
+    'TWITTER_ACCESS_TOKEN', 'TWITTER_ACCESS_TOKEN_SECRET',
+] as const;
+
+/** Try to (re-)initialize the Twitter client. Returns true if client is ready. */
 function tryInitClient(runtime: IAgentRuntime): boolean {
     if (globalTwitterClient) return true;
 
-    const apiKey = runtime.getSetting('TWITTER_API_KEY');
-    const apiSecretKey = runtime.getSetting('TWITTER_API_SECRET_KEY');
-    const accessToken = runtime.getSetting('TWITTER_ACCESS_TOKEN');
-    const accessTokenSecret = runtime.getSetting('TWITTER_ACCESS_TOKEN_SECRET');
-
-    if (!apiKey || !apiSecretKey || !accessToken || !accessTokenSecret) {
+    const creds = TWITTER_CRED_KEYS.map(k => runtime.getSetting(k));
+    const missing = TWITTER_CRED_KEYS.filter((_, i) => !creds[i]);
+    if (missing.length > 0) {
+        globalInitError = `Missing: ${missing.join(', ')}`;
         return false;
     }
 
     try {
         globalTwitterClient = new TwitterApi({
-            appKey: apiKey,
-            appSecret: apiSecretKey,
-            accessToken: accessToken,
-            accessSecret: accessTokenSecret,
+            appKey: creds[0] as string,
+            appSecret: creds[1] as string,
+            accessToken: creds[2] as string,
+            accessSecret: creds[3] as string,
         });
         globalInitError = null;
-        logger.info('[AegisTwitter] Twitter client re-initialized successfully');
+        logger.info('[AegisTwitter] Twitter client initialized');
         return true;
     } catch (error: any) {
         globalInitError = error.message;
-        logger.warn(`[AegisTwitter] Twitter re-init failed: ${error.message}`);
+        logger.warn(`[AegisTwitter] Twitter init failed: ${error.message}`);
         return false;
     }
 }
 
-/**
- * Core tweet posting logic. Called by the interval timer.
- */
+/** Core tweet posting logic. Called by the interval timer. */
 async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
     let currentItemTitle: string | null = null;
     try {
-        // Heartbeat / diagnostic log every cycle
         cycleCount++;
-        logger.info(`[AegisTwitter] === Cycle #${cycleCount} | tweeted=${recentlyTweeted.size} items tracked | client=${globalTwitterClient ? 'ready' : 'null'} ===`);
+        logger.info(`[AegisTwitter] Cycle #${cycleCount} | tracked=${recentlyTweeted.size} | client=${globalTwitterClient ? 'ready' : 'null'}`);
 
-        logger.info('[AegisTwitter] Fetching briefing for tweet...');
-        const briefing = await withTimeout(
-            fetchAegisBriefing(),
-            30_000,
-            'Aegis briefing fetch',
-        );
+        const briefing = await withTimeout(fetchAegisBriefing(), 30_000, 'Aegis briefing fetch');
 
-        // Count total available items for diagnostics
-        let totalItems = 0;
-        if (isGlobalBriefing(briefing)) {
-            for (const c of briefing.contributors) {
-                totalItems += c.topItems.length;
-            }
-        } else if (briefing.items) {
-            totalItems = briefing.items.length;
-        }
-
+        // Try picking an item; on exhaustion, expire old entries then clear all
         let item = pickBestItem(briefing);
-
-        // If all items exhausted, expire old entries and retry
         if (!item) {
             const cleared = expireOldTweets();
-            logger.info(`[AegisTwitter] All ${totalItems} items already tweeted. Expired ${cleared} old entries, retrying...`);
+            logger.info(`[AegisTwitter] All items tweeted. Expired ${cleared} old entries, retrying...`);
             item = pickBestItem(briefing);
         }
-
-        // Still nothing? Clear ALL history and pick top item
         if (!item) {
-            logger.info(`[AegisTwitter] Still no items after expiry. Clearing all ${recentlyTweeted.size} entries.`);
+            logger.info(`[AegisTwitter] Still exhausted. Clearing all ${recentlyTweeted.size} entries.`);
             recentlyTweeted.clear();
             item = pickBestItem(briefing);
         }
-
         if (!item) {
-            logger.warn(`[AegisTwitter] No items in briefing at all (totalItems=${totalItems})`);
+            logger.warn('[AegisTwitter] No items available in briefing');
             return;
         }
         currentItemTitle = item.title;
 
-        // If we have a contributor principal, fetch the individual briefing
-        // for sourceUrl and content (used for LLM commentary)
+        // Enrich global items with sourceUrl/content from individual briefing
         if (item.contributorPrincipal) {
             try {
                 const indBriefing = await withTimeout(
-                    fetchIndividualBriefing(item.contributorPrincipal),
-                    30_000,
-                    'Individual briefing fetch',
+                    fetchIndividualBriefing(item.contributorPrincipal), 30_000, 'Individual briefing fetch',
                 );
-                if (indBriefing?.items) {
-                    const normalizeTitle = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase();
-                    const matchedItem = indBriefing.items.find(
-                        i => normalizeTitle(i.title) === normalizeTitle(item!.title)
-                    );
-                    if (matchedItem) {
-                        if (matchedItem.sourceUrl && !item.sourceUrl) {
-                            item.sourceUrl = matchedItem.sourceUrl;
-                            logger.info(`[AegisTwitter] Found sourceUrl: ${matchedItem.sourceUrl}`);
-                        }
-                        if (matchedItem.content && !item.content) {
-                            item.content = matchedItem.content;
-                            logger.info(`[AegisTwitter] Found content (${matchedItem.content.length} chars)`);
-                        }
-                    }
+                const normalize = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase();
+                const match = indBriefing?.items?.find(i => normalize(i.title) === normalize(item!.title));
+                if (match) {
+                    if (match.sourceUrl && !item.sourceUrl) item.sourceUrl = match.sourceUrl;
+                    if (match.content && !item.content) item.content = match.content;
                 }
             } catch (error: any) {
                 logger.warn(`[AegisTwitter] Individual briefing fetch failed: ${error.message}`);
@@ -518,9 +397,7 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
     }
 }
 
-/**
- * The interval callback. Guards against overlapping executions.
- */
+/** Interval callback. Guards against overlapping executions. */
 async function intervalTick(): Promise<void> {
     if (isPostingInProgress) {
         logger.info('[AegisTwitter] Previous cycle still in progress, skipping');
@@ -552,32 +429,11 @@ export class AegisTwitterService extends Service {
             return service;
         }
 
-        // Check that Twitter credentials are available
-        const apiKey = runtime.getSetting('TWITTER_API_KEY');
-        const apiSecretKey = runtime.getSetting('TWITTER_API_SECRET_KEY');
-        const accessToken = runtime.getSetting('TWITTER_ACCESS_TOKEN');
-        const accessTokenSecret = runtime.getSetting('TWITTER_ACCESS_TOKEN_SECRET');
-
-        if (!apiKey || !apiSecretKey || !accessToken || !accessTokenSecret) {
-            const missing = [];
-            if (!apiKey) missing.push('TWITTER_API_KEY');
-            if (!apiSecretKey) missing.push('TWITTER_API_SECRET_KEY');
-            if (!accessToken) missing.push('TWITTER_ACCESS_TOKEN');
-            if (!accessTokenSecret) missing.push('TWITTER_ACCESS_TOKEN_SECRET');
-            logger.warn(`[AegisTwitter] Missing credentials: ${missing.join(', ')} — will not post`);
+        globalRuntime = runtime;
+        if (!tryInitClient(runtime)) {
+            logger.warn(`[AegisTwitter] ${globalInitError} — will not post`);
             return service;
         }
-
-        // Initialize twitter-api-v2 client (module-level so it survives stop() calls)
-        logger.info('[AegisTwitter] Creating Twitter API v2 client...');
-        globalTwitterClient = new TwitterApi({
-            appKey: apiKey,
-            appSecret: apiSecretKey,
-            accessToken: accessToken,
-            accessSecret: accessTokenSecret,
-        });
-        globalRuntime = runtime;
-        logger.info('[AegisTwitter] Twitter client created');
 
         // Clear any previous interval (in case start() is called multiple times)
         if (globalIntervalHandle) {
@@ -610,33 +466,18 @@ export class AegisTwitterService extends Service {
         return service;
     }
 
-    static async stop(_runtime: IAgentRuntime): Promise<void> {
-        // Intentionally do NOT clear the interval here.
-        // ElizaOS may call this during lifecycle events, and we want
-        // the interval to keep running.
-        logger.info('[AegisTwitter] static stop() called (interval continues)');
-    }
-
-    async stop(): Promise<void> {
-        // Log but keep the interval running. The interval is module-level
-        // and should persist even if the framework disposes the service instance.
-        logger.info('[AegisTwitter] instance stop() called (interval continues)');
-        // Log stack trace so we can diagnose who/what called stop()
-        logger.info(`[AegisTwitter] stop() caller stack: ${new Error().stack?.split('\n').slice(1, 4).join(' <- ')}`);
-    }
+    // Intentionally no-op: interval is module-level and must survive lifecycle events
+    static async stop(_runtime: IAgentRuntime): Promise<void> {}
+    async stop(): Promise<void> {}
 }
 
-// ============================================
-// Plugin Export
-// ============================================
+// --- Plugin Export ---
 export const aegisTwitterPlugin: Plugin = {
     name: 'aegis-twitter',
-    description:
-        'Periodically posts Aegis D2A briefing highlights to Twitter/X using twitter-api-v2 directly.',
+    description: 'Periodically posts Aegis D2A briefing highlights to Twitter/X.',
     services: [AegisTwitterService],
-    init: async (_config: Record<string, string>) => {
-        logger.info('*** Aegis Twitter Plugin Registered ***');
-        logger.info(`*** Enabled: ${TWITTER_POST_CONFIG.ENABLED}, DryRun: ${TWITTER_POST_CONFIG.DRY_RUN} ***`);
+    init: async () => {
+        logger.info(`[AegisTwitter] Plugin registered (enabled=${TWITTER_POST_CONFIG.ENABLED}, dryRun=${TWITTER_POST_CONFIG.DRY_RUN})`);
     },
 };
 
