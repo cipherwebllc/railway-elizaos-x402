@@ -472,25 +472,7 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
             }
         }
 
-        // Log the full tweet text for debugging 503 issues
-        logger.info(`[AegisTwitter] Attempting to post (${tweet.length} chars):\n---\n${tweet}\n---`);
-
-        // Pre-flight: test API connectivity with a lightweight call
-        try {
-            const me = await withTimeout(globalTwitterClient!.v2.me(), 10_000, 'v2.me pre-flight');
-            logger.info(`[AegisTwitter] API pre-flight OK: @${me.data?.username || 'unknown'}`);
-        } catch (prefErr: any) {
-            logger.error(`[AegisTwitter] API pre-flight failed: ${prefErr.message} (code=${prefErr.code || prefErr.status || 'unknown'})`);
-            // If pre-flight fails with 503, don't even try posting
-            if (prefErr.code === 503 || prefErr.status === 503 || prefErr.message?.includes('503')) {
-                logger.error('[AegisTwitter] Twitter API itself is returning 503 — this is a Twitter-side outage, not a tweet content issue');
-                throw prefErr;  // will be caught by outer catch
-            }
-            // For other pre-flight errors (429 rate limit etc), still try posting
-            logger.info('[AegisTwitter] Pre-flight failed but attempting post anyway...');
-        }
-
-        // Post tweet using object syntax for explicit payload
+        // Post tweet
         const result = await globalTwitterClient!.v2.tweet({ text: tweet });
         markAsTweeted(item.title);
         consecutive503Count = 0;  // Reset on success
