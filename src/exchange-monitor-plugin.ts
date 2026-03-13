@@ -166,30 +166,29 @@ export class ExchangeMonitorService extends Service {
   }
 
   /**
-   * Fallback exchange data when API is unavailable
+   * Fallback exchange list when API is unavailable.
+   * Returns names only — no volume or trust scores, since we cannot verify them live.
    */
   getFallbackExchangeData(): any[] {
+    logger.warn('CoinGecko API unavailable — returning exchange names only (no live volume data)');
     return [
       {
         id: 'binance',
         name: 'Binance',
-        trust_score: 10,
-        trade_volume_24h_btc: 500000,
         country: 'Global',
+        _fallback: true,
       },
       {
         id: 'coinbase-exchange',
         name: 'Coinbase Exchange',
-        trust_score: 10,
-        trade_volume_24h_btc: 250000,
         country: 'United States',
+        _fallback: true,
       },
       {
         id: 'kraken',
         name: 'Kraken',
-        trust_score: 10,
-        trade_volume_24h_btc: 150000,
         country: 'United States',
+        _fallback: true,
       },
     ];
   }
@@ -300,15 +299,22 @@ const getExchangeInfoAction: Action = {
         if (exchanges.length > 0) {
           responseText = `🌍 **グローバル取引所ランキング** (取引量順)\n\n`;
 
-          exchanges.slice(0, 5).forEach((exchange: any, index: number) => {
-            const volume = exchange.trade_volume_24h_btc
-              ? `${(exchange.trade_volume_24h_btc / 1000).toFixed(0)}K BTC`
-              : 'N/A';
-            const trustScore = exchange.trust_score || 'N/A';
+          const isFallback = exchanges.some((e: any) => e._fallback);
 
+          if (isFallback) {
+            responseText += `⚠️ _APIレート制限のため、リアルタイムデータは取得できませんでした。主要取引所の一覧のみ表示します。_\n\n`;
+          }
+
+          exchanges.slice(0, 5).forEach((exchange: any, index: number) => {
             responseText += `${index + 1}. **${exchange.name}**\n`;
-            responseText += `   📊 24h取引量: ${volume}\n`;
-            responseText += `   ⭐ Trust Score: ${trustScore}/10\n`;
+            if (!isFallback) {
+              const volume = exchange.trade_volume_24h_btc
+                ? `${(exchange.trade_volume_24h_btc / 1000).toFixed(0)}K BTC`
+                : 'N/A';
+              const trustScore = exchange.trust_score || 'N/A';
+              responseText += `   📊 24h取引量: ${volume}\n`;
+              responseText += `   ⭐ Trust Score: ${trustScore}/10\n`;
+            }
             if (exchange.country) {
               responseText += `   🌐 国: ${exchange.country}\n`;
             }

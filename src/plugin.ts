@@ -53,9 +53,10 @@ const helloWorldAction: Action = {
   similes: ['GREET', 'SAY_HELLO'],
   description: 'Responds with a simple hello world message',
 
-  validate: async (_runtime: IAgentRuntime, _message: Memory, _state: State): Promise<boolean> => {
-    // Always valid
-    return true;
+  validate: async (_runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
+    const text = (message.content.text || '').toLowerCase();
+    const greetingKeywords = ['hello', 'hi', 'hey', 'greet', 'good morning', 'good evening', 'howdy'];
+    return greetingKeywords.some(keyword => text.includes(keyword));
   },
 
   handler: async (
@@ -136,7 +137,7 @@ const helloWorldAction: Action = {
  */
 const helloWorldProvider: Provider = {
   name: 'HELLO_WORLD_PROVIDER',
-  description: 'A simple example provider',
+  description: 'A simple example provider that reports starter plugin status',
 
   get: async (
     _runtime: IAgentRuntime,
@@ -144,9 +145,14 @@ const helloWorldProvider: Provider = {
     _state: State
   ): Promise<ProviderResult> => {
     return {
-      text: '',
-      values: {},
-      data: {},
+      text: 'Starter plugin is active.',
+      values: {
+        starterPluginActive: true,
+      },
+      data: {
+        pluginName: 'starter',
+        loadedAt: Date.now(),
+      },
     };
   },
 };
@@ -222,33 +228,27 @@ const plugin: Plugin = {
       },
     },
   ],
+  // Template event handlers — debug logging only.
+  // Replace with real logic when extending this plugin.
   events: {
     MESSAGE_RECEIVED: [
       async (params) => {
-        logger.info('MESSAGE_RECEIVED event received');
-        // print the keys
-        logger.info({ keys: Object.keys(params) }, 'MESSAGE_RECEIVED param keys');
+        logger.debug({ keys: Object.keys(params) }, 'MESSAGE_RECEIVED event received');
       },
     ],
     VOICE_MESSAGE_RECEIVED: [
       async (params) => {
-        logger.info('VOICE_MESSAGE_RECEIVED event received');
-        // print the keys
-        logger.info({ keys: Object.keys(params) }, 'VOICE_MESSAGE_RECEIVED param keys');
+        logger.debug({ keys: Object.keys(params) }, 'VOICE_MESSAGE_RECEIVED event received');
       },
     ],
     WORLD_CONNECTED: [
       async (params) => {
-        logger.info('WORLD_CONNECTED event received');
-        // print the keys
-        logger.info({ keys: Object.keys(params) }, 'WORLD_CONNECTED param keys');
+        logger.debug({ keys: Object.keys(params) }, 'WORLD_CONNECTED event received');
       },
     ],
     WORLD_JOINED: [
       async (params) => {
-        logger.info('WORLD_JOINED event received');
-        // print the keys
-        logger.info({ keys: Object.keys(params) }, 'WORLD_JOINED param keys');
+        logger.debug({ keys: Object.keys(params) }, 'WORLD_JOINED event received');
       },
     ],
   },

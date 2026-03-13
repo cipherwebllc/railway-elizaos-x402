@@ -14,7 +14,7 @@ import {
     parseJSONObjectFromText,
 } from '@elizaos/core';
 import { ERC8004Service } from '../service';
-import { ERC8004_SERVICE_NAME } from '../constants';
+import { ERC8004_SERVICE_NAME, getExplorerTxUrl, DEFAULT_CHAIN_ID } from '../constants';
 
 /**
  * Interface representing the content of a penalization.
@@ -32,16 +32,16 @@ function isPenalizeAgentContent(content: PenalizeAgentContent): boolean {
     logger.log('Content for penalization', content as any);
 
     if (!content.targetAgentId || typeof content.targetAgentId !== 'string') {
-        console.warn('bad targetAgentId');
+        logger.warn('ERC8004 penalizeAgent: invalid targetAgentId');
         return false;
     }
 
     if (!content.amount || (typeof content.amount !== 'string' && typeof content.amount !== 'number')) {
-        console.warn('bad amount', typeof content.amount, content.amount);
+        logger.warn({ type: typeof content.amount, value: content.amount }, 'ERC8004 penalizeAgent: invalid amount');
         return false;
     }
 
-    console.log('penalization content valid');
+    logger.debug('ERC8004 penalizeAgent: content valid');
     return true;
 }
 
@@ -163,7 +163,7 @@ export const penalizeAgentAction: Action = {
 
 🔗 **Transaction:**
 • TX Hash: \`${result.transactionHash}\`
-• View on BaseScan: https://sepolia.basescan.org/tx/${result.transactionHash}`;
+• View on Explorer: ${getExplorerTxUrl(DEFAULT_CHAIN_ID, result.transactionHash)}`;
 
                 if (callback) {
                     await callback({
@@ -202,7 +202,16 @@ export const penalizeAgentAction: Action = {
             }
         } catch (error) {
             logger.error({ error }, 'Error in penalizeAgent action:');
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            if (callback) {
+                await callback({
+                    text: `❌ Failed to penalize agent: ${errorMsg}`,
+                    actions: ['PENALIZE_AGENT_ERC8004'],
+                    source: message.content.source,
+                });
+            }
             return {
+                text: `Failed to penalize agent: ${errorMsg}`,
                 success: false,
                 error: error instanceof Error ? error : new Error(String(error)),
             };

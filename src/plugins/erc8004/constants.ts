@@ -56,6 +56,20 @@ export const CACHE_TTL = {
     ACTIVE_STATUS: 120, // 2 minutes
 } as const;
 
+// Block explorer URLs per chain (for transaction links)
+export const BLOCK_EXPLORER_URLS: Record<number, string> = {
+    [SUPPORTED_CHAINS.BASE_MAINNET]: 'https://basescan.org',
+    [SUPPORTED_CHAINS.BASE_SEPOLIA]: 'https://sepolia.basescan.org',
+    [SUPPORTED_CHAINS.ETHEREUM_MAINNET]: 'https://etherscan.io',
+    [SUPPORTED_CHAINS.ETHEREUM_SEPOLIA]: 'https://sepolia.etherscan.io',
+};
+
+export function getExplorerTxUrl(chainId: number, txHash: string): string {
+    const base = BLOCK_EXPLORER_URLS[chainId];
+    if (!base) return txHash; // fallback: just return the hash
+    return `${base}/tx/${txHash}`;
+}
+
 // Default ERC-8004 registries
 // Note: Plugins like plugin-babylon will register their registries dynamically
 export const DEFAULT_REGISTRIES: Array<{
