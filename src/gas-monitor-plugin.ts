@@ -2,7 +2,6 @@ import type { Plugin } from '@elizaos/core';
 import {
   type Action,
   type ActionResult,
-  type Content,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -11,10 +10,12 @@ import {
   logger,
 } from '@elizaos/core';
 
-/**
- * Gas Monitor Service
- * Provides real-time gas prices and network congestion data for multiple chains
- */
+const GAS_CHAINS = [
+  { chain: 'Ethereum', url: 'https://api.etherscan.io/api?module=gastracker&action=gasoracle' },
+  { chain: 'Base', url: 'https://api.basescan.org/api?module=gastracker&action=gasoracle' },
+  { chain: 'Polygon', url: 'https://api.polygonscan.com/api?module=gastracker&action=gasoracle' },
+] as const;
+
 export class GasMonitorService extends Service {
   static serviceType = 'gas-monitor';
 
@@ -26,34 +27,25 @@ export class GasMonitorService extends Service {
 
   static async start(runtime: IAgentRuntime) {
     logger.info('*** Starting Gas Monitor service ***');
-    const service = new GasMonitorService(runtime);
-    return service;
+    return new GasMonitorService(runtime);
   }
 
   static async stop(runtime: IAgentRuntime) {
     logger.info('*** Stopping Gas Monitor service ***');
-    const service = runtime.getService(GasMonitorService.serviceType);
-    if (service) {
-      service.stop();
-    }
+    runtime.getService(GasMonitorService.serviceType)?.stop();
   }
 
   async stop() {
     logger.info('*** Stopping Gas Monitor service instance ***');
   }
 
-  /**
-   * Get Ethereum gas prices from Etherscan API (Free, no API key required for basic usage)
-   */
-  async getEthereumGas(): Promise<any> {
+  private async getChainGas(chain: string, url: string): Promise<any> {
     try {
-      const url = 'https://api.etherscan.io/api?module=gastracker&action=gasoracle';
-      logger.info('Fetching Ethereum gas prices');
-
+      logger.info(`Fetching ${chain} gas prices`);
       const response = await fetch(url);
 
       if (!response.ok) {
-        logger.warn(`Etherscan API error: ${response.status} ${response.statusText}`);
+        logger.warn(`${chain} gas API error: ${response.status} ${response.statusText}`);
         return null;
       }
 
@@ -61,7 +53,7 @@ export class GasMonitorService extends Service {
 
       if (data.status === '1' && data.result) {
         return {
-          chain: 'Ethereum',
+          chain,
           safe: data.result.SafeGasPrice,
           standard: data.result.ProposeGasPrice,
           fast: data.result.FastGasPrice,
@@ -70,86 +62,15 @@ export class GasMonitorService extends Service {
       }
       return null;
     } catch (error) {
-      logger.error({ error }, 'Error fetching Ethereum gas prices');
+      logger.error({ error }, `Error fetching ${chain} gas prices`);
       return null;
     }
   }
 
-  /**
-   * Get Base gas prices (Layer 2)
-   */
-  async getBaseGas(): Promise<any> {
-    try {
-      const url = 'https://api.basescan.org/api?module=gastracker&action=gasoracle';
-      logger.info('Fetching Base gas prices');
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        logger.warn(`Basescan API error: ${response.status} ${response.statusText}`);
-        return null;
-      }
-
-      const data = await response.json();
-
-      if (data.status === '1' && data.result) {
-        return {
-          chain: 'Base',
-          safe: data.result.SafeGasPrice,
-          standard: data.result.ProposeGasPrice,
-          fast: data.result.FastGasPrice,
-          timestamp: Date.now(),
-        };
-      }
-      return null;
-    } catch (error) {
-      logger.error({ error }, 'Error fetching Base gas prices');
-      return null;
-    }
-  }
-
-  /**
-   * Get Polygon gas prices
-   */
-  async getPolygonGas(): Promise<any> {
-    try {
-      const url = 'https://api.polygonscan.com/api?module=gastracker&action=gasoracle';
-      logger.info('Fetching Polygon gas prices');
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        logger.warn(`Polygonscan API error: ${response.status} ${response.statusText}`);
-        return null;
-      }
-
-      const data = await response.json();
-
-      if (data.status === '1' && data.result) {
-        return {
-          chain: 'Polygon',
-          safe: data.result.SafeGasPrice,
-          standard: data.result.ProposeGasPrice,
-          fast: data.result.FastGasPrice,
-          timestamp: Date.now(),
-        };
-      }
-      return null;
-    } catch (error) {
-      logger.error({ error }, 'Error fetching Polygon gas prices');
-      return null;
-    }
-  }
-
-  /**
-   * Get all chain gas prices
-   */
   async getAllGasPrices(): Promise<any[]> {
-    const results = await Promise.allSettled([
-      this.getEthereumGas(),
-      this.getBaseGas(),
-      this.getPolygonGas(),
-    ]);
+    const results = await Promise.allSettled(
+      GAS_CHAINS.map(({ chain, url }) => this.getChainGas(chain, url))
+    );
 
     return results
       .filter((result) => result.status === 'fulfilled' && result.value !== null)
@@ -157,10 +78,6 @@ export class GasMonitorService extends Service {
   }
 }
 
-/**
- * Get Gas Prices Action
- * Fetches current gas prices across multiple chains
- */
 const getGasPricesAction: Action = {
   name: 'GET_GAS_PRICES',
   similes: ['GAS', 'GAS_PRICE', 'NETWORK_FEE', 'TRANSACTION_FEE', 'GAS_FEE'],
@@ -175,13 +92,7 @@ const getGasPricesAction: Action = {
     const hasGasKeyword = gasKeywords.some((keyword) => text.includes(keyword));
     const hasChainKeyword = chainKeywords.some((keyword) => text.includes(keyword)) || hasGasKeyword;
 
-    const isGasQuery = hasGasKeyword && hasChainKeyword;
-
-    if (isGasQuery) {
-      logger.info(`[GET_GAS_PRICES] Validate returned TRUE for: "${message.content.text}"`);
-    }
-
-    return isGasQuery;
+    return hasGasKeyword && hasChainKeyword;
   },
 
   handler: async (
@@ -201,7 +112,6 @@ const getGasPricesAction: Action = {
         throw new Error('Gas Monitor service not available');
       }
 
-      // Fetch gas prices
       const gasPrices = await service.getAllGasPrices();
 
       if (gasPrices.length === 0) {
@@ -218,7 +128,6 @@ const getGasPricesAction: Action = {
         };
       }
 
-      // Format response
       let responseText = `⛽ 現在のガス代情報:\n\n`;
 
       gasPrices.forEach((chainData: any) => {
@@ -228,20 +137,17 @@ const getGasPricesAction: Action = {
         responseText += `  🚀 高速: ${chainData.fast} Gwei\n\n`;
       });
 
-      // Add recommendations
       const lowestChain = gasPrices.reduce((prev, current) =>
         parseFloat(prev.standard) < parseFloat(current.standard) ? prev : current
       );
 
       responseText += `💡 **推奨**: ${lowestChain.chain}が現在最も安いガス代です (${lowestChain.standard} Gwei)`;
 
-      const responseContent: Content = {
+      await callback({
         text: responseText,
         actions: ['GET_GAS_PRICES'],
         source: message.content.source,
-      };
-
-      await callback(responseContent);
+      });
 
       return {
         text: `Successfully retrieved gas prices for ${gasPrices.length} chains`,
@@ -332,10 +238,6 @@ const getGasPricesAction: Action = {
   ],
 };
 
-/**
- * Gas Monitor Plugin
- * Provides real-time gas price monitoring functionality
- */
 export const gasMonitorPlugin: Plugin = {
   name: 'gas-monitor',
   description: 'Real-time gas price monitoring across Ethereum, Base, and Polygon',

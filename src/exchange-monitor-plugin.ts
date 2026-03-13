@@ -2,7 +2,6 @@ import type { Plugin } from '@elizaos/core';
 import {
   type Action,
   type ActionResult,
-  type Content,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -11,10 +10,6 @@ import {
   logger,
 } from '@elizaos/core';
 
-/**
- * Exchange Monitor Service
- * Monitors cryptocurrency exchange status, volumes, and anomalies
- */
 export class ExchangeMonitorService extends Service {
   static serviceType = 'exchange-monitor';
 
@@ -194,10 +189,6 @@ export class ExchangeMonitorService extends Service {
   }
 }
 
-/**
- * Get Exchange Info Action
- * Provides cryptocurrency exchange information and status
- */
 const getExchangeInfoAction: Action = {
   name: 'GET_EXCHANGE_INFO',
   similes: ['EXCHANGE', 'TRADING', 'VOLUME', 'CEX', 'MARKETPLACE'],
@@ -238,13 +229,7 @@ const getExchangeInfoAction: Action = {
     const hasExchangeKeyword = exchangeKeywords.some((keyword) => text.includes(keyword));
     const hasQueryContext = queryKeywords.some((keyword) => text.includes(keyword)) || hasExchangeKeyword;
 
-    const isExchangeQuery = hasExchangeKeyword && hasQueryContext;
-
-    if (isExchangeQuery) {
-      logger.info(`[GET_EXCHANGE_INFO] Validate returned TRUE for: "${message.content.text}"`);
-    }
-
-    return isExchangeQuery;
+    return hasExchangeKeyword && hasQueryContext;
   },
 
   handler: async (
@@ -268,7 +253,6 @@ const getExchangeInfoAction: Action = {
       let responseText = '';
       let data: any = {};
 
-      // Check if asking about Japanese exchanges
       if (text.includes('japan') || text.includes('日本') || text.includes('国内')) {
         const jpExchanges = service.getJapaneseExchanges();
         data = { japanese_exchanges: jpExchanges };
@@ -333,13 +317,11 @@ const getExchangeInfoAction: Action = {
         responseText += `- 日本語サポートがない場合があります\n`;
       }
 
-      const responseContent: Content = {
+      await callback({
         text: responseText,
         actions: ['GET_EXCHANGE_INFO'],
         source: message.content.source,
-      };
-
-      await callback(responseContent);
+      });
 
       return {
         text: 'Successfully retrieved exchange information',
@@ -429,10 +411,6 @@ const getExchangeInfoAction: Action = {
   ],
 };
 
-/**
- * Exchange Monitor Plugin
- * Provides cryptocurrency exchange monitoring functionality
- */
 export const exchangeMonitorPlugin: Plugin = {
   name: 'exchange-monitor',
   description: 'Cryptocurrency exchange information and monitoring',

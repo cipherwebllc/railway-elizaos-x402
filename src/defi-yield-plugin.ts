@@ -2,7 +2,6 @@ import type { Plugin } from '@elizaos/core';
 import {
   type Action,
   type ActionResult,
-  type Content,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -11,10 +10,6 @@ import {
   logger,
 } from '@elizaos/core';
 
-/**
- * DeFi Yield Service
- * Provides DeFi yield farming and staking opportunities
- */
 export class DeFiYieldService extends Service {
   static serviceType = 'defi-yield';
 
@@ -155,10 +150,6 @@ export class DeFiYieldService extends Service {
   }
 }
 
-/**
- * Get DeFi Yield Action
- * Fetches DeFi yield farming and staking opportunities
- */
 const getDeFiYieldAction: Action = {
   name: 'GET_DEFI_YIELD',
   similes: ['YIELD', 'APY', 'STAKING', 'FARMING', 'LIQUIDITY'],
@@ -188,13 +179,7 @@ const getDeFiYieldAction: Action = {
     const hasYieldKeyword = yieldKeywords.some((keyword) => text.includes(keyword));
     const hasDeFiContext = defiKeywords.some((keyword) => text.includes(keyword)) || hasYieldKeyword;
 
-    const isYieldQuery = hasYieldKeyword && hasDeFiContext;
-
-    if (isYieldQuery) {
-      logger.info(`[GET_DEFI_YIELD] Validate returned TRUE for: "${message.content.text}"`);
-    }
-
-    return isYieldQuery;
+    return hasYieldKeyword && hasDeFiContext;
   },
 
   handler: async (
@@ -218,7 +203,6 @@ const getDeFiYieldAction: Action = {
       let yields: any[] = [];
       let title = '';
 
-      // Determine which yields to fetch based on query
       if (text.includes('stablecoin') || text.includes('stable') || text.includes('ステーブル')) {
         yields = await service.getStablecoinYields();
         title = 'ステーブルコインの利回り機会';
@@ -229,7 +213,6 @@ const getDeFiYieldAction: Action = {
         text.includes('polygon') ||
         text.includes('arbitrum')
       ) {
-        // Extract chain name
         let chain = 'Ethereum';
         if (text.includes('base')) chain = 'Base';
         else if (text.includes('polygon')) chain = 'Polygon';
@@ -256,7 +239,6 @@ const getDeFiYieldAction: Action = {
         };
       }
 
-      // Format response
       let responseText = `💰 **${title}** (上位${yields.length}件)\n\n`;
 
       yields.slice(0, 5).forEach((pool: any, index: number) => {
@@ -286,13 +268,11 @@ const getDeFiYieldAction: Action = {
       responseText += `- 必ず自己調査（DYOR）を行ってください\n\n`;
       responseText += `_データはDeFiLlamaより取得（リアルタイム）_`;
 
-      const responseContent: Content = {
+      await callback({
         text: responseText,
         actions: ['GET_DEFI_YIELD'],
         source: message.content.source,
-      };
-
-      await callback(responseContent);
+      });
 
       return {
         text: `Successfully retrieved ${yields.length} yield opportunities`,
@@ -383,10 +363,6 @@ const getDeFiYieldAction: Action = {
   ],
 };
 
-/**
- * DeFi Yield Plugin
- * Provides DeFi yield farming and staking opportunity information
- */
 export const deFiYieldPlugin: Plugin = {
   name: 'defi-yield',
   description: 'DeFi yield farming and staking opportunities from DeFiLlama',

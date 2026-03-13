@@ -2,7 +2,6 @@ import type { Plugin } from '@elizaos/core';
 import {
   type Action,
   type ActionResult,
-  type Content,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -14,12 +13,6 @@ import {
 } from '@elizaos/core';
 import { z } from 'zod';
 
-/**
- * Define the configuration schema for the plugin with the following properties:
- *
- * @param {string} EXAMPLE_PLUGIN_VARIABLE - The name of the plugin (min length of 1, optional)
- * @returns {object} - The configured schema object
- */
 const configSchema = z.object({
   EXAMPLE_PLUGIN_VARIABLE: z
     .string()
@@ -33,21 +26,6 @@ const configSchema = z.object({
     }),
 });
 
-/**
- * Example HelloWorld action
- * This demonstrates the simplest possible action structure
- */
-/**
- * Represents an action that responds with a simple hello world message.
- *
- * @typedef {Object} Action
- * @property {string} name - The name of the action
- * @property {string[]} similes - The related similes of the action
- * @property {string} description - Description of the action
- * @property {Function} validate - Validation function for the action
- * @property {Function} handler - The function that handles the action
- * @property {Object[]} examples - Array of examples for the action
- */
 const helloWorldAction: Action = {
   name: 'HELLO_WORLD',
   similes: ['GREET', 'SAY_HELLO'],
@@ -70,15 +48,11 @@ const helloWorldAction: Action = {
     try {
       logger.info('Handling HELLO_WORLD action');
 
-      // Simple response content
-      const responseContent: Content = {
+      await callback({
         text: 'hello world!',
         actions: ['HELLO_WORLD'],
         source: message.content.source,
-      };
-
-      // Call back with the hello world message
-      await callback(responseContent);
+      });
 
       return {
         text: 'Sent hello world greeting',
@@ -95,17 +69,8 @@ const helloWorldAction: Action = {
       };
     } catch (error) {
       logger.error({ error }, 'Error in HELLO_WORLD action:');
-
       return {
         text: 'Failed to send hello world greeting',
-        values: {
-          success: false,
-          error: 'GREETING_FAILED',
-        },
-        data: {
-          actionName: 'HELLO_WORLD',
-          error: error instanceof Error ? error.message : String(error),
-        },
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
       };
@@ -131,10 +96,6 @@ const helloWorldAction: Action = {
   ],
 };
 
-/**
- * Example Hello World Provider
- * This demonstrates the simplest possible provider implementation
- */
 const helloWorldProvider: Provider = {
   name: 'HELLO_WORLD_PROVIDER',
   description: 'A simple example provider that reports starter plugin status',
@@ -174,7 +135,6 @@ export class StarterService extends Service {
 
   static async stop(runtime: IAgentRuntime) {
     logger.info('*** Stopping starter service ***');
-    // get the service from the runtime
     const service = runtime.getService(StarterService.serviceType);
     if (!service) {
       throw new Error('Starter service not found');
@@ -200,7 +160,6 @@ const plugin: Plugin = {
     try {
       const validatedConfig = await configSchema.parseAsync(config);
 
-      // Set all environment variables at once
       for (const [key, value] of Object.entries(validatedConfig)) {
         if (value) process.env[key] = value;
       }
@@ -221,7 +180,6 @@ const plugin: Plugin = {
       path: '/helloworld',
       type: 'GET',
       handler: async (_req: any, res: any) => {
-        // send a response
         res.json({
           message: 'Hello World!',
         });
