@@ -312,20 +312,30 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
         }
         currentItemTitle = item.title;
 
-        // Enrich global items with sourceUrl/content from individual briefing
-        if (item.contributorPrincipal) {
-            try {
-                const indBriefing = await withTimeout(
-                    fetchIndividualBriefing(item.contributorPrincipal), 30_000, 'Individual briefing fetch',
-                );
-                const normalize = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase();
-                const match = indBriefing?.items?.find(i => normalize(i.title) === normalize(item!.title));
-                if (match) {
-                    if (match.sourceUrl && !item.sourceUrl) item.sourceUrl = match.sourceUrl;
-                    if (match.content && !item.content) item.content = match.content;
+        // Enrich items with sourceUrl/content from individual briefing
+        // Global items need enrichment because topItems often lack sourceUrl;
+        // individual items may also lack sourceUrl if the API omits it.
+        if (!item.sourceUrl) {
+            const principal = item.contributorPrincipal || process.env.AEGIS_IC_PRINCIPAL;
+            if (principal) {
+                try {
+                    const indBriefing = await withTimeout(
+                        fetchIndividualBriefing(principal), 30_000, 'Individual briefing fetch',
+                    );
+                    // Compare cleaned titles since pickBestItem already cleaned ours
+                    const normalize = (t: string) => cleanTitle(t).replace(/\s+/g, ' ').trim().toLowerCase();
+                    const normalizedItemTitle = normalize(item!.title);
+                    const match = indBriefing?.items?.find(i => normalize(i.title) === normalizedItemTitle);
+                    if (match) {
+                        if (match.sourceUrl) item.sourceUrl = match.sourceUrl;
+                        if (match.content && !item.content) item.content = match.content;
+                        logger.info(`[AegisTwitter] Enriched item with sourceUrl: ${match.sourceUrl || 'none'}`);
+                    } else {
+                        logger.warn(`[AegisTwitter] No matching item in individual briefing for: "${item.title.slice(0, 50)}"`);
+                    }
+                } catch (error: any) {
+                    logger.warn(`[AegisTwitter] Individual briefing fetch failed: ${error.message}`);
                 }
-            } catch (error: any) {
-                logger.warn(`[AegisTwitter] Individual briefing fetch failed: ${error.message}`);
             }
         }
 
@@ -351,8 +361,12 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
             }
         }
 
-        // Post tweet
-        const result = await globalTwitterClient!.v2.tweet({ text: tweet });
+        // Post tweet (with timeout to avoid indefinite hangs)
+        const result = await withTimeout(
+            globalTwitterClient!.v2.tweet({ text: tweet }),
+            60_000,
+            'Twitter API tweet',
+        );
         markAsTweeted(item.title);
         consecutive503Count = 0;  // Reset on success
 
@@ -365,7 +379,9 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
             try {
                 apiDetail = JSON.stringify(error.data);
                 logger.error(`[AegisTwitter] API response: ${apiDetail}`);
-            } catch { /* ignore */ }
+            } catch (serializeErr: any) {
+                logger.warn(`[AegisTwitter] Could not serialize API error data: ${serializeErr.message}`);
+            }
         }
         if (error.code === 403) {
             if (apiDetail.includes('duplicate') || apiDetail.includes('Duplicate')) {
@@ -446,7 +462,11 @@ export class AegisTwitterService extends Service {
 
         if (TWITTER_POST_CONFIG.POST_ON_STARTUP) {
             // Post immediately (with small delay for other services to init)
-            setTimeout(() => intervalTick(), 10_000);
+            setTimeout(() => {
+                intervalTick().catch((e) => {
+                    logger.error(`[AegisTwitter] Startup tick error: ${e.message}`);
+                });
+            }, 10_000);
         }
 
         // Start the repeating interval — this is independent of the service instance

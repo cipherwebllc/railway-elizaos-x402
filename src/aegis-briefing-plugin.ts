@@ -216,10 +216,18 @@ export async function fetchAegisBriefing(options?: {
         logger.info(`[Aegis] Fetching global briefing (offset=${offset}, limit=${limit})`);
     }
 
-    const res = await fetchFn(url.toString(), {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    let res: Response;
+    try {
+        res = await fetchFn(url.toString(), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            signal: controller.signal,
+        });
+    } finally {
+        clearTimeout(timer);
+    }
 
     if (!res.ok) {
         const body = await res.text().catch(() => '');
@@ -269,10 +277,18 @@ export async function fetchIndividualBriefing(principal: string): Promise<AegisI
         url.searchParams.set('principal', principal);
         logger.info(`[Aegis] Fetching individual briefing for principal: ${principal}`);
 
-        const res = await fetchFn(url.toString(), {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-        });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 30_000);
+        let res: Response;
+        try {
+            res = await fetchFn(url.toString(), {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                signal: controller.signal,
+            });
+        } finally {
+            clearTimeout(timer);
+        }
 
         if (!res.ok) {
             logger.warn(`[Aegis] Individual briefing fetch failed: ${res.status}`);
@@ -295,11 +311,16 @@ export async function fetchIndividualBriefing(principal: string): Promise<AegisI
  */
 export async function checkAegisHealth(): Promise<boolean> {
     try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10_000);
         const res = await fetch(`${AEGIS_CONFIG.BASE_URL}/api/d2a/health`, {
             method: 'GET',
+            signal: controller.signal,
         });
+        clearTimeout(timer);
         return res.ok;
-    } catch {
+    } catch (error: any) {
+        logger.warn(`[Aegis] Health check failed: ${error.message}`);
         return false;
     }
 }
