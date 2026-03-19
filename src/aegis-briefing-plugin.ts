@@ -630,8 +630,8 @@ export const aegisBriefingPlugin: Plugin = {
         try {
             const healthy = await checkAegisHealth();
             if (!healthy) logger.warn('[Aegis] Health check: UNREACHABLE');
-        } catch {
-            logger.warn('[Aegis] Health check failed on startup');
+        } catch (error: any) {
+            logger.warn(`[Aegis] Health check failed on startup: ${error?.message || error}`);
         }
     },
 };

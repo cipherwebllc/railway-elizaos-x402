@@ -52,6 +52,11 @@ export class ExchangeMonitorService extends Service {
         return null;
       }
 
+      if (!response.ok) {
+        logger.warn(`CoinGecko exchange API error for ${exchangeId}: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
       const data = await response.json();
       return data;
     } catch (error) {
@@ -86,6 +91,9 @@ export class ExchangeMonitorService extends Service {
   /**
    * Get Japanese exchange information
    */
+  // Static data snapshot — update when exchange info changes
+  static readonly JP_EXCHANGE_DATA_DATE = '2025-01';
+
   getJapaneseExchanges(): any[] {
     return [
       {
@@ -257,7 +265,7 @@ const getExchangeInfoAction: Action = {
         const jpExchanges = service.getJapaneseExchanges();
         data = { japanese_exchanges: jpExchanges };
 
-        responseText = `🏦 **日本の暗号資産取引所**\n\n`;
+        responseText = `🏦 **日本の暗号資産取引所** _(データ: ${ExchangeMonitorService.JP_EXCHANGE_DATA_DATE}時点)_\n\n`;
 
         jpExchanges.forEach((exchange: any, index: number) => {
           responseText += `## ${index + 1}. ${exchange.name}\n`;
