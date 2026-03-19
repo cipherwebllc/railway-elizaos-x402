@@ -32,9 +32,10 @@ const helloWorldAction: Action = {
   description: 'Responds with a simple hello world message',
 
   validate: async (_runtime: IAgentRuntime, message: Memory, _state: State): Promise<boolean> => {
-    const text = (message.content.text || '').toLowerCase();
-    const greetingKeywords = ['hello', 'hi', 'hey', 'greet', 'good morning', 'good evening', 'howdy'];
-    return greetingKeywords.some(keyword => text.includes(keyword));
+    const text = (message.content.text || '').trim().toLowerCase();
+    // Only match if the entire message is a simple greeting (not part of a longer question)
+    const exactGreetings = ['hello', 'hi', 'hey', 'howdy', 'good morning', 'good evening'];
+    return exactGreetings.includes(text) || text === 'hello world';
   },
 
   handler: async (

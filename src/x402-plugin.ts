@@ -136,15 +136,21 @@ class X402Database {
         `);
 
         // Add new columns if they don't exist (for migration)
-        try {
-            this.db.run(`ALTER TABLE users ADD COLUMN is_daily INTEGER DEFAULT 0`);
-        } catch (e) { /* Column might already exist */ }
-        try {
-            this.db.run(`ALTER TABLE users ADD COLUMN daily_plan_expires_at TEXT`);
-        } catch (e) { /* Column might already exist */ }
-        try {
-            this.db.run(`ALTER TABLE users ADD COLUMN daily_plan_used INTEGER DEFAULT 0`);
-        } catch (e) { /* Column might already exist */ }
+        const migrationColumns = [
+            'is_daily INTEGER DEFAULT 0',
+            'daily_plan_expires_at TEXT',
+            'daily_plan_used INTEGER DEFAULT 0',
+        ];
+        for (const colDef of migrationColumns) {
+            try {
+                this.db.run(`ALTER TABLE users ADD COLUMN ${colDef}`);
+            } catch (e: any) {
+                const msg = e?.message || String(e);
+                if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+                    logger.error(`[X402DB] Migration failed for column "${colDef}": ${msg}`);
+                }
+            }
+        }
 
         this.db.run(`
             CREATE TABLE IF NOT EXISTS payments (
@@ -158,12 +164,20 @@ class X402Database {
         `);
 
         // Create indexes (ignore if exists)
-        try {
-            this.db.run(`CREATE INDEX idx_payments_user ON payments(user_id)`);
-        } catch (e) { /* Index might already exist */ }
-        try {
-            this.db.run(`CREATE INDEX idx_payments_tx ON payments(tx_hash)`);
-        } catch (e) { /* Index might already exist */ }
+        const indexes = [
+            'CREATE INDEX idx_payments_user ON payments(user_id)',
+            'CREATE INDEX idx_payments_tx ON payments(tx_hash)',
+        ];
+        for (const stmt of indexes) {
+            try {
+                this.db.run(stmt);
+            } catch (e: any) {
+                const msg = e?.message || String(e);
+                if (!msg.includes('already exists')) {
+                    logger.error(`[X402DB] Index creation failed: ${msg}`);
+                }
+            }
+        }
     }
 
     private save() {

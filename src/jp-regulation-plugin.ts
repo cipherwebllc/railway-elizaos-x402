@@ -19,9 +19,21 @@ export class JapanRegulationService extends Service {
     super(runtime);
   }
 
+  // Data snapshot date — update this when regulation data is refreshed
+  static readonly DATA_SNAPSHOT_DATE = '2025-01-01';
+
   static async start(runtime: IAgentRuntime) {
     logger.info('*** Starting Japan Regulation service ***');
     const service = new JapanRegulationService(runtime);
+
+    // Warn if static data is older than 6 months
+    const snapshotAge = Date.now() - new Date(JapanRegulationService.DATA_SNAPSHOT_DATE).getTime();
+    const sixMonthsMs = 180 * 24 * 60 * 60 * 1000;
+    if (snapshotAge > sixMonthsMs) {
+      const monthsOld = Math.floor(snapshotAge / (30 * 24 * 60 * 60 * 1000));
+      logger.warn(`[JP-Regulation] Static regulation data is ~${monthsOld} months old (snapshot: ${JapanRegulationService.DATA_SNAPSHOT_DATE}). Consider updating.`);
+    }
+
     return service;
   }
 
