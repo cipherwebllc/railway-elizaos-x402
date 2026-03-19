@@ -281,6 +281,16 @@ Language: Default is English, targeting a global audience. If the user inputs in
             TWITTER_API_SECRET_KEY: process.env.TWITTER_API_SECRET_KEY,
             TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN,
             TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET,
+            // Discovery & Actions settings (plugin-twitter)
+            TWITTER_ENABLE_POST: 'false',          // Posting handled by aegisTwitterPlugin
+            TWITTER_ENABLE_DISCOVERY: process.env.TWITTER_ENABLE_DISCOVERY || 'true',
+            TWITTER_ENABLE_ACTIONS: process.env.TWITTER_ENABLE_ACTIONS || 'true',
+            TWITTER_ENABLE_REPLIES: process.env.TWITTER_ENABLE_REPLIES || 'true',
+            TWITTER_TARGET_USERS: process.env.TWITTER_TARGET_USERS || '',
+            TWITTER_MAX_ENGAGEMENTS_PER_RUN: process.env.TWITTER_MAX_ENGAGEMENTS_PER_RUN || '5',
+            TWITTER_DISCOVERY_INTERVAL_MIN: process.env.TWITTER_DISCOVERY_INTERVAL_MIN || '30',
+            TWITTER_DISCOVERY_INTERVAL_MAX: process.env.TWITTER_DISCOVERY_INTERVAL_MAX || '60',
+            TWITTER_DRY_RUN: process.env.TWITTER_DRY_RUN || 'false',
         },
         avatar: 'https://dwebxr.xyz/images/coodao.png',
         model: 'anthropic/claude-sonnet-4',
@@ -304,8 +314,10 @@ Language: Default is English, targeting a global audience. If the user inputs in
         '@elizaos/plugin-sql',
         '@elizaos/plugin-bootstrap',
 
-        // Platform plugins (Discord loaded via index.ts agent plugins, Twitter loaded directly there too)
+        // Platform plugins
         ...(process.env.DISCORD_API_TOKEN?.trim() ? ['@elizaos/plugin-discord'] : []),
+        // Twitter plugin for discovery, actions, and reply handling (posting disabled — handled by aegisTwitterPlugin)
+        ...(process.env.TWITTER_API_KEY?.trim() ? ['@elizaos/plugin-twitter'] : []),
 
         // Embedding-capable plugins (optional)
         ...(process.env.OPENAI_API_KEY?.trim() ? ['@elizaos/plugin-openai'] : []),

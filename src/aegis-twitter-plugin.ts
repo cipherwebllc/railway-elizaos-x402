@@ -204,13 +204,22 @@ function formatTweet(item: TweetCandidate, commentary: string = ''): string {
     return truncate(item.title, available) + link;
 }
 
-// --- Recently-tweeted deduplication (title → timestamp, 6h gap) ---
-const MIN_REPOST_GAP_MS = 6 * 60 * 60 * 1000;
+// --- Recently-tweeted deduplication (normalized title → timestamp, 24h gap) ---
+const MIN_REPOST_GAP_MS = 24 * 60 * 60 * 1000;
 const recentlyTweeted = new Map<string, number>();
-const MAX_RECENT = 100;
+const MAX_RECENT = 200;
+
+/** Normalize title for fuzzy dedup: lowercase, strip punctuation/whitespace */
+function normalizeForDedup(title: string): string {
+    return title
+        .toLowerCase()
+        .replace(/[^a-z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/g, '')
+        .trim();
+}
 
 function markAsTweeted(title: string): void {
-    recentlyTweeted.set(title, Date.now());
+    const key = normalizeForDedup(title);
+    recentlyTweeted.set(key, Date.now());
     // Cap size by removing oldest entries
     if (recentlyTweeted.size > MAX_RECENT) {
         const oldest = recentlyTweeted.keys().next().value;
@@ -219,11 +228,12 @@ function markAsTweeted(title: string): void {
 }
 
 function wasTweeted(title: string): boolean {
-    const ts = recentlyTweeted.get(title);
+    const key = normalizeForDedup(title);
+    const ts = recentlyTweeted.get(key);
     if (ts === undefined) return false;
     // Allow re-posting after the minimum gap
     if (Date.now() - ts > MIN_REPOST_GAP_MS) {
-        recentlyTweeted.delete(title);
+        recentlyTweeted.delete(key);
         return false;
     }
     return true;
@@ -233,9 +243,9 @@ function wasTweeted(title: string): boolean {
 function expireOldTweets(): number {
     const now = Date.now();
     let cleared = 0;
-    for (const [title, ts] of recentlyTweeted) {
+    for (const [key, ts] of recentlyTweeted) {
         if (now - ts > MIN_REPOST_GAP_MS) {
-            recentlyTweeted.delete(title);
+            recentlyTweeted.delete(key);
             cleared++;
         }
     }
@@ -294,7 +304,7 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
 
         const briefing = await withTimeout(fetchAegisBriefing(), 30_000, 'Aegis briefing fetch');
 
-        // Try picking an item; on exhaustion, expire old entries then clear all
+        // Try picking an item; on exhaustion, expire old entries only (never clear all)
         let item = pickBestItem(briefing);
         if (!item) {
             const cleared = expireOldTweets();
@@ -302,12 +312,7 @@ async function postBriefingTweet(runtime: IAgentRuntime): Promise<void> {
             item = pickBestItem(briefing);
         }
         if (!item) {
-            logger.info(`[AegisTwitter] Still exhausted. Clearing all ${recentlyTweeted.size} entries.`);
-            recentlyTweeted.clear();
-            item = pickBestItem(briefing);
-        }
-        if (!item) {
-            logger.warn('[AegisTwitter] No items available in briefing');
+            logger.info(`[AegisTwitter] All ${recentlyTweeted.size} items still in dedup window — skipping this cycle to avoid duplicates`);
             return;
         }
         currentItemTitle = item.title;
@@ -511,6 +516,7 @@ export const _testExports = {
     markAsTweeted,
     wasTweeted,
     expireOldTweets,
+    normalizeForDedup,
     recentlyTweeted,
     withTimeout,
     generateCommentary,
