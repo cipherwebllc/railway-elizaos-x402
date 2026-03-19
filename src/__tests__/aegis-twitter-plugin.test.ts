@@ -9,6 +9,7 @@ const {
     markAsTweeted,
     wasTweeted,
     expireOldTweets,
+    normalizeForDedup,
     recentlyTweeted,
     withTimeout,
     generateCommentary,
@@ -392,16 +393,23 @@ describe('deduplication', () => {
     });
 
     test('wasTweeted returns false after gap expires', () => {
-        // Manually set an old timestamp
-        recentlyTweeted.set('Old Item', Date.now() - MIN_REPOST_GAP_MS - 1000);
+        // Manually set an old timestamp using normalized key
+        recentlyTweeted.set(normalizeForDedup('Old Item'), Date.now() - MIN_REPOST_GAP_MS - 1000);
         expect(wasTweeted('Old Item')).toBe(false);
         // Should also clean up the entry
-        expect(recentlyTweeted.has('Old Item')).toBe(false);
+        expect(recentlyTweeted.has(normalizeForDedup('Old Item'))).toBe(false);
     });
 
     test('wasTweeted returns true within gap', () => {
-        recentlyTweeted.set('Recent Item', Date.now() - 1000);
+        recentlyTweeted.set(normalizeForDedup('Recent Item'), Date.now() - 1000);
         expect(wasTweeted('Recent Item')).toBe(true);
+    });
+
+    test('fuzzy dedup catches similar titles with different punctuation', () => {
+        markAsTweeted('Hello World!');
+        expect(wasTweeted('hello world')).toBe(true);
+        expect(wasTweeted('Hello   World!')).toBe(true);
+        expect(wasTweeted('HELLO WORLD')).toBe(true);
     });
 
     test('markAsTweeted caps size at MAX_RECENT', () => {
@@ -416,20 +424,20 @@ describe('deduplication', () => {
             markAsTweeted(`Item ${i}`);
         }
         // Item 0 should have been evicted
-        expect(recentlyTweeted.has('Item 0')).toBe(false);
+        expect(recentlyTweeted.has(normalizeForDedup('Item 0'))).toBe(false);
         // Latest item should still be there
-        expect(recentlyTweeted.has(`Item ${MAX_RECENT}`)).toBe(true);
+        expect(recentlyTweeted.has(normalizeForDedup(`Item ${MAX_RECENT}`))).toBe(true);
     });
 
     test('expireOldTweets removes old entries', () => {
-        recentlyTweeted.set('Old 1', Date.now() - MIN_REPOST_GAP_MS - 1000);
-        recentlyTweeted.set('Old 2', Date.now() - MIN_REPOST_GAP_MS - 2000);
-        recentlyTweeted.set('Recent', Date.now());
+        recentlyTweeted.set(normalizeForDedup('Old 1'), Date.now() - MIN_REPOST_GAP_MS - 1000);
+        recentlyTweeted.set(normalizeForDedup('Old 2'), Date.now() - MIN_REPOST_GAP_MS - 2000);
+        recentlyTweeted.set(normalizeForDedup('Recent'), Date.now());
 
         const cleared = expireOldTweets();
         expect(cleared).toBe(2);
         expect(recentlyTweeted.size).toBe(1);
-        expect(recentlyTweeted.has('Recent')).toBe(true);
+        expect(recentlyTweeted.has(normalizeForDedup('Recent'))).toBe(true);
     });
 
     test('expireOldTweets returns 0 when nothing to expire', () => {
@@ -806,8 +814,8 @@ describe('exhaustion recovery flow', () => {
         // All exhausted
         expect(pickBestItem(briefing)).toBeNull();
 
-        // Now manually age Item A past the gap
-        recentlyTweeted.set('Item A', Date.now() - MIN_REPOST_GAP_MS - 1000);
+        // Now manually age Item A past the gap (use normalized key)
+        recentlyTweeted.set(normalizeForDedup('Item A'), Date.now() - MIN_REPOST_GAP_MS - 1000);
 
         // expireOldTweets clears it from the map
         const cleared = expireOldTweets();
