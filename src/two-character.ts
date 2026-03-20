@@ -282,10 +282,13 @@ Language: Default is English, targeting a global audience. If the user inputs in
             TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN,
             TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET,
             // Discovery & Actions settings (plugin-twitter)
+            // NOTE: Like/follow/reply POST endpoints return 403 on X API Pay-Per-Use tier.
+            // Discovery & actions only consume read credits without producing engagement.
+            // Default to 'false' to avoid wasting credits; override via env vars if X fixes this.
             TWITTER_ENABLE_POST: 'false',          // Posting handled by aegisTwitterPlugin
-            TWITTER_ENABLE_DISCOVERY: process.env.TWITTER_ENABLE_DISCOVERY || 'true',
-            TWITTER_ENABLE_ACTIONS: process.env.TWITTER_ENABLE_ACTIONS || 'true',
-            TWITTER_ENABLE_REPLIES: process.env.TWITTER_ENABLE_REPLIES || 'true',
+            TWITTER_ENABLE_DISCOVERY: process.env.TWITTER_ENABLE_DISCOVERY || 'false',
+            TWITTER_ENABLE_ACTIONS: process.env.TWITTER_ENABLE_ACTIONS || 'false',
+            TWITTER_ENABLE_REPLIES: process.env.TWITTER_ENABLE_REPLIES || 'false',
             TWITTER_TARGET_USERS: process.env.TWITTER_TARGET_USERS || '',
             TWITTER_MAX_ENGAGEMENTS_PER_RUN: process.env.TWITTER_MAX_ENGAGEMENTS_PER_RUN || '5',
             TWITTER_DISCOVERY_INTERVAL_MIN: process.env.TWITTER_DISCOVERY_INTERVAL_MIN || '30',
