@@ -52,10 +52,9 @@ export class CoinGeckoService extends Service {
 
       logger.info(`Fetching price for ${coinId} in ${vsCurrency}`);
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
 
       if (!response.ok) {
-        // If rate limited (429), just log warning and return null instead of throwing
         if (response.status === 429) {
           logger.warn(`CoinGecko API rate limit reached for ${coinId}, skipping price fetch`);
           return null;

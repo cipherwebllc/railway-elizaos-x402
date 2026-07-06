@@ -40,7 +40,7 @@ const CONFIG = {
     POLYGON_RPC_URL: process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com',
 
     // Common
-    RECEIVER_ADDRESS: process.env.X402_RECEIVER_ADDRESS || '0x52d4901142e2b5680027da5eb47c86cb02a3ca81',
+    RECEIVER_ADDRESS: process.env.X402_RECEIVER_ADDRESS || '',
     DB_DIR: process.env.X402_DB_DIR || './data',
 };
 
@@ -110,7 +110,7 @@ class X402Database {
             this.initialized = true;
             logger.info(`[X402DB] Database initialized at: ${this.dbPath}`);
         } catch (error) {
-            logger.error(`[X402DB] Failed to initialize database:`, error);
+            logger.error({ error }, '[X402DB] Failed to initialize database');
             throw error;
         }
     }
@@ -173,7 +173,7 @@ class X402Database {
             const buffer = Buffer.from(data);
             fs.writeFileSync(this.dbPath, buffer);
         } catch (error) {
-            logger.error(`[X402DB] Failed to save database:`, error);
+            logger.error({ error }, '[X402DB] Failed to save database');
         }
     }
 
@@ -573,9 +573,11 @@ export class X402Service extends Service {
     }
 
     static async start(runtime: IAgentRuntime) {
+        if (!CONFIG.RECEIVER_ADDRESS) {
+            throw new Error('X402_RECEIVER_ADDRESS env var is required — cannot start payment service without a receiver wallet');
+        }
         logger.info('*** Starting X402 service (sql.js - pure JS, no native bindings) ***');
         const service = new X402Service(runtime);
-        // Initialize database asynchronously
         await service.db.init();
         return service;
     }
@@ -681,7 +683,7 @@ async function verifyUsdcPayment(txHash: string): Promise<PaymentVerificationRes
 
         return { verified: false, error: '受取アドレスへのUSDC転送が見つかりません' };
     } catch (error: any) {
-        logger.error('[VERIFY_USDC] Error:', error);
+        logger.error({ error }, '[VERIFY_USDC] Error');
         return { verified: false, error: `Base検証エラー: ${error.message}` };
     }
 }
@@ -732,7 +734,7 @@ async function verifyJpycPayment(txHash: string): Promise<PaymentVerificationRes
 
         return { verified: false, error: '受取アドレスへのJPYC転送が見つかりません' };
     } catch (error: any) {
-        logger.error('[VERIFY_JPYC] Error:', error);
+        logger.error({ error }, '[VERIFY_JPYC] Error');
         return { verified: false, error: `Polygon検証エラー: ${error.message}` };
     }
 }
@@ -812,45 +814,51 @@ const statusAction: Action = {
         callback: HandlerCallback,
         _responses: Memory[]
     ): Promise<ActionResult> => {
-        const service = runtime.getService<X402Service>('x402');
-        if (!service) return { success: false };
+        try {
+            const service = runtime.getService<X402Service>('x402');
+            if (!service) return { success: false };
 
-        const userId = extractUserId(message);
-        const db = service.getDatabase();
-        const status = db.getUserStatus(userId);
+            const userId = extractUserId(message);
+            const db = service.getDatabase();
+            const status = db.getUserStatus(userId);
 
-        let statusText = '📊 **あなたの利用状況**\n\n';
+            let statusText = '📊 **あなたの利用状況**\n\n';
 
-        if (status.isAdmin) {
-            statusText += '👑 **管理者モード** - 無制限\n';
-        } else if (status.isPro) {
-            const expiresStr = status.proExpiresAt ? status.proExpiresAt.toLocaleDateString('ja-JP') : '';
-            statusText += `⭐ **Pro会員** - 無制限（${expiresStr}まで）\n`;
-        } else if (status.isDaily) {
-            statusText += `📅 **Dailyプラン** - 残り ${status.dailyPlanRemaining}/${CONFIG.DAILY_QUERY_LIMIT}回（本日中有効）\n`;
-        } else {
-            statusText += `🎫 購入クレジット: ${status.credits}回\n`;
-            statusText += `🆓 本日の無料枠: ${status.dailyFreeRemaining}/${CONFIG.FREE_DAILY_LIMIT}回\n`;
+            if (status.isAdmin) {
+                statusText += '👑 **管理者モード** - 無制限\n';
+            } else if (status.isPro) {
+                const expiresStr = status.proExpiresAt ? status.proExpiresAt.toLocaleDateString('ja-JP') : '';
+                statusText += `⭐ **Pro会員** - 無制限（${expiresStr}まで）\n`;
+            } else if (status.isDaily) {
+                statusText += `📅 **Dailyプラン** - 残り ${status.dailyPlanRemaining}/${CONFIG.DAILY_QUERY_LIMIT}回（本日中有効）\n`;
+            } else {
+                statusText += `🎫 購入クレジット: ${status.credits}回\n`;
+                statusText += `🆓 本日の無料枠: ${status.dailyFreeRemaining}/${CONFIG.FREE_DAILY_LIMIT}回\n`;
+            }
+
+            statusText += `\n---\n`;
+            statusText += `💰 **料金プラン**\n\n`;
+            statusText += `**Base (USDC)**\n`;
+            statusText += `• 🎫 単発: ${CONFIG.SINGLE_PRICE_USDC} USDC / 1回\n`;
+            statusText += `• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日\n`;
+            statusText += `• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n\n`;
+            statusText += `**Polygon (JPYC)**\n`;
+            statusText += `• 🎫 単発: ${CONFIG.SINGLE_PRICE_JPYC} JPYC / 1回\n`;
+            statusText += `• 📅 Daily: ${CONFIG.DAILY_PRICE_JPYC} JPYC / ${CONFIG.DAILY_QUERY_LIMIT}回/日\n`;
+            statusText += `• ⭐ Pro: ${CONFIG.PRO_PRICE_JPYC} JPYC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n`;
+
+            const responseContent: Content = {
+                text: statusText,
+                source: message.content.source,
+            };
+
+            await callback(responseContent);
+            return { success: true };
+        } catch (error) {
+            logger.error({ error }, '[CHECK_STATUS] Error in handler');
+            await callback({ text: 'ステータスの取得に失敗しました。しばらくしてからお試しください。', source: message.content.source });
+            return { success: false, error: error instanceof Error ? error : new Error(String(error)) };
         }
-
-        statusText += `\n---\n`;
-        statusText += `💰 **料金プラン**\n\n`;
-        statusText += `**Base (USDC)**\n`;
-        statusText += `• 🎫 単発: ${CONFIG.SINGLE_PRICE_USDC} USDC / 1回\n`;
-        statusText += `• 📅 Daily: ${CONFIG.DAILY_PRICE_USDC} USDC / ${CONFIG.DAILY_QUERY_LIMIT}回/日\n`;
-        statusText += `• ⭐ Pro: ${CONFIG.PRO_PRICE_USDC} USDC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n\n`;
-        statusText += `**Polygon (JPYC)**\n`;
-        statusText += `• 🎫 単発: ${CONFIG.SINGLE_PRICE_JPYC} JPYC / 1回\n`;
-        statusText += `• 📅 Daily: ${CONFIG.DAILY_PRICE_JPYC} JPYC / ${CONFIG.DAILY_QUERY_LIMIT}回/日\n`;
-        statusText += `• ⭐ Pro: ${CONFIG.PRO_PRICE_JPYC} JPYC / ${CONFIG.PRO_DURATION_DAYS}日間無制限\n`;
-
-        const responseContent: Content = {
-            text: statusText,
-            source: message.content.source,
-        };
-
-        await callback(responseContent);
-        return { success: true };
     },
     examples: []
 };
@@ -925,36 +933,37 @@ const checkPaymentAction: Action = {
         callback: HandlerCallback,
         _responses: Memory[]
     ): Promise<ActionResult> => {
-        const userId = extractUserId(message);
-        const agentName = runtime.character?.name || 'unknown';
-        const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
+        try {
+            const userId = extractUserId(message);
+            const agentName = runtime.character?.name || 'unknown';
+            const PAYMENT_PAGE_URL = process.env.PAYMENT_PAGE_URL || 'https://x402payment.vercel.app';
 
-        // Handle admin key login
-        if ((message as any)._isAdminKey) {
-            const service = runtime.getService<X402Service>('x402');
-            if (service) {
-                const allUserIds = getAllUserIds(message);
-                const db = service.getDatabase();
-                allUserIds.forEach(id => db.setAdmin(id, true));
-                logger.info(`[CHECK_PAYMENT:${agentName}] ✅ Admin login successful for: ${allUserIds.join(', ')}`);
+            // Handle admin key login
+            if ((message as any)._isAdminKey) {
+                const service = runtime.getService<X402Service>('x402');
+                if (service) {
+                    const allUserIds = getAllUserIds(message);
+                    const db = service.getDatabase();
+                    allUserIds.forEach(id => db.setAdmin(id, true));
+                    logger.info(`[CHECK_PAYMENT:${agentName}] ✅ Admin login successful for: ${allUserIds.join(', ')}`);
+                }
+                await callback({
+                    text: `✅ 管理者としてログインしました。無制限でご利用いただけます。`,
+                    source: message.content.source,
+                });
+                return { success: true };
             }
-            await callback({
-                text: `✅ 管理者としてログインしました。無制限でご利用いただけます。`,
-                source: message.content.source,
-            });
-            return { success: true };
-        }
 
-        logger.info(`[CHECK_PAYMENT:${agentName}] 🚫 HANDLER EXECUTING - Sending payment prompt to ${userId}`);
+            logger.info(`[CHECK_PAYMENT:${agentName}] 🚫 HANDLER EXECUTING - Sending payment prompt to ${userId}`);
 
-        // USDC links (Base)
-        const usdcSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=single&amount=${CONFIG.SINGLE_PRICE_USDC}`;
-        const usdcDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
-        // JPYC links (Polygon)
-        const jpycSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=single&amount=${CONFIG.SINGLE_PRICE_JPYC}`;
-        const jpycDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=daily&amount=${CONFIG.DAILY_PRICE_JPYC}`;
+            // USDC links (Base)
+            const usdcSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=single&amount=${CONFIG.SINGLE_PRICE_USDC}`;
+            const usdcDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=usdc&plan=daily&amount=${CONFIG.DAILY_PRICE_USDC}`;
+            // JPYC links (Polygon)
+            const jpycSingleLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=single&amount=${CONFIG.SINGLE_PRICE_JPYC}`;
+            const jpycDailyLink = `${PAYMENT_PAGE_URL}/pay?user=${encodeURIComponent(userId)}&currency=jpyc&plan=daily&amount=${CONFIG.DAILY_PRICE_JPYC}`;
 
-        const responseText = `💰 **ご利用には支払いが必要です**
+            const responseText = `💰 **ご利用には支払いが必要です**
 
 🆓 本日の無料枠を使い切りました（${CONFIG.FREE_DAILY_LIMIT}回/日）
 
@@ -976,9 +985,14 @@ const checkPaymentAction: Action = {
 
 ✅ 支払い完了後、トランザクションハッシュ(0x...)を送信してください`;
 
-        await callback({ text: responseText, source: message.content.source });
-        logger.info(`[CHECK_PAYMENT:${agentName}] ✅ Payment prompt sent`);
-        return { success: true };
+            await callback({ text: responseText, source: message.content.source });
+            logger.info(`[CHECK_PAYMENT:${agentName}] ✅ Payment prompt sent`);
+            return { success: true };
+        } catch (error) {
+            logger.error({ error }, '[CHECK_PAYMENT] Error in handler');
+            await callback({ text: '支払い情報の処理に失敗しました。しばらくしてからお試しください。', source: message.content.source });
+            return { success: false, error: error instanceof Error ? error : new Error(String(error)) };
+        }
     },
     examples: []
 };
@@ -1003,73 +1017,77 @@ const verifyPaymentAction: Action = {
         callback: HandlerCallback,
         _responses: Memory[]
     ): Promise<ActionResult> => {
-        const service = runtime.getService<X402Service>('x402');
-        if (!service) return { success: false };
+        try {
+            const service = runtime.getService<X402Service>('x402');
+            if (!service) return { success: false };
 
-        const userId = extractUserId(message);
-        const db = service.getDatabase();
+            const userId = extractUserId(message);
+            const db = service.getDatabase();
 
-        const text = message.content.text || '';
-        const txHashMatch = text.match(/0x[a-fA-F0-9]{64}/);
+            const text = message.content.text || '';
+            const txHashMatch = text.match(/0x[a-fA-F0-9]{64}/);
 
-        if (!txHashMatch) {
-            await callback({
-                text: '❌ トランザクションハッシュが見つかりません。\n\n0x... の形式で送信してください。',
-                source: message.content.source,
-            });
-            return { success: false };
-        }
-
-        const txHash = txHashMatch[0];
-
-        if (db.isPaymentUsed(txHash)) {
-            await callback({
-                text: '❌ このトランザクションは既に使用されています。',
-                source: message.content.source,
-            });
-            return { success: false };
-        }
-
-        const result = await verifyPaymentOnChain(txHash);
-
-        if (result.verified && result.amount && result.currency) {
-            // Determine payment type: pro > daily > single
-            const paymentType = result.isPro ? 'pro' : (result.isDaily ? 'daily' : 'single');
-            db.recordPayment(txHash, userId, result.amount, `${paymentType}_${result.currency}`);
-
-            const currencySymbol = result.currency;
-            const networkName = result.currency === 'USDC' ? 'Base' : 'Polygon';
-
-            if (result.isPro) {
-                db.grantPro(userId);
+            if (!txHashMatch) {
                 await callback({
-                    text: `✅ **Pro会員になりました！**\n\n💰 受領額: ${result.amount} ${currencySymbol} (${networkName})\n⭐ ${CONFIG.PRO_DURATION_DAYS}日間無制限でご利用いただけます\n\nご質問をどうぞ！`,
+                    text: '❌ トランザクションハッシュが見つかりません。\n\n0x... の形式で送信してください。',
                     source: message.content.source,
                 });
-            } else if (result.isDaily) {
-                db.grantDaily(userId);
-                await callback({
-                    text: `✅ **Dailyプランが有効になりました！**\n\n💰 受領額: ${result.amount} ${currencySymbol} (${networkName})\n📅 本日中 ${CONFIG.DAILY_QUERY_LIMIT}回までご利用いただけます\n\nご質問をどうぞ！`,
-                    source: message.content.source,
-                });
-            } else {
-                // Calculate credits based on currency
-                const singlePrice = result.currency === 'USDC' ? CONFIG.SINGLE_PRICE_USDC : CONFIG.SINGLE_PRICE_JPYC;
-                const creditsToAdd = Math.floor(result.amount / singlePrice);
-                db.addCredits(userId, creditsToAdd);
-                await callback({
-                    text: `✅ お支払いを確認しました！\n\n💰 受領額: ${result.amount} ${currencySymbol} (${networkName})\n🎫 クレジット: ${creditsToAdd}回分付与\n\nご質問をどうぞ！`,
-                    source: message.content.source,
-                });
+                return { success: false };
             }
 
-            return { success: true };
-        } else {
-            await callback({
-                text: `❌ お支払いを確認できませんでした。\n\n理由: ${result.error}\n\n💡 ヒント:\n- トランザクションが確定するまで数分お待ちください\n- 正しい受取アドレスに送金したか確認してください`,
-                source: message.content.source,
-            });
-            return { success: false };
+            const txHash = txHashMatch[0];
+
+            if (db.isPaymentUsed(txHash)) {
+                await callback({
+                    text: '❌ このトランザクションは既に使用されています。',
+                    source: message.content.source,
+                });
+                return { success: false };
+            }
+
+            const result = await verifyPaymentOnChain(txHash);
+
+            if (result.verified && result.amount && result.currency) {
+                const paymentType = result.isPro ? 'pro' : (result.isDaily ? 'daily' : 'single');
+                db.recordPayment(txHash, userId, result.amount, `${paymentType}_${result.currency}`);
+
+                const currencySymbol = result.currency;
+                const networkName = result.currency === 'USDC' ? 'Base' : 'Polygon';
+
+                if (result.isPro) {
+                    db.grantPro(userId);
+                    await callback({
+                        text: `✅ **Pro会員になりました！**\n\n💰 受領額: ${result.amount} ${currencySymbol} (${networkName})\n⭐ ${CONFIG.PRO_DURATION_DAYS}日間無制限でご利用いただけます\n\nご質問をどうぞ！`,
+                        source: message.content.source,
+                    });
+                } else if (result.isDaily) {
+                    db.grantDaily(userId);
+                    await callback({
+                        text: `✅ **Dailyプランが有効になりました！**\n\n💰 受領額: ${result.amount} ${currencySymbol} (${networkName})\n📅 本日中 ${CONFIG.DAILY_QUERY_LIMIT}回までご利用いただけます\n\nご質問をどうぞ！`,
+                        source: message.content.source,
+                    });
+                } else {
+                    const singlePrice = result.currency === 'USDC' ? CONFIG.SINGLE_PRICE_USDC : CONFIG.SINGLE_PRICE_JPYC;
+                    const creditsToAdd = Math.floor(result.amount / singlePrice);
+                    db.addCredits(userId, creditsToAdd);
+                    await callback({
+                        text: `✅ お支払いを確認しました！\n\n💰 受領額: ${result.amount} ${currencySymbol} (${networkName})\n🎫 クレジット: ${creditsToAdd}回分付与\n\nご質問をどうぞ！`,
+                        source: message.content.source,
+                    });
+                }
+
+                return { success: true };
+            } else {
+                await callback({
+                    text: `❌ お支払いを確認できませんでした。\n\n理由: ${result.error}\n\n💡 ヒント:\n- トランザクションが確定するまで数分お待ちください\n- 正しい受取アドレスに送金したか確認してください`,
+                    source: message.content.source,
+                });
+                return { success: false };
+            }
+        } catch (error) {
+            logger.error({ error }, '[VERIFY_PAYMENT] Error in handler');
+            await callback({ text: '支払い検証に失敗しました。しばらくしてからお試しください。', source: message.content.source });
+            return { success: false, error: error instanceof Error ? error : new Error(String(error)) };
         }
     },
     examples: []
@@ -1093,20 +1111,26 @@ const adminLoginAction: Action = {
         callback: HandlerCallback,
         _responses: Memory[]
     ): Promise<ActionResult> => {
-        const service = runtime.getService<X402Service>('x402');
-        if (!service) return { success: false };
+        try {
+            const service = runtime.getService<X402Service>('x402');
+            if (!service) return { success: false };
 
-        const allUserIds = getAllUserIds(message);
-        const db = service.getDatabase();
+            const allUserIds = getAllUserIds(message);
+            const db = service.getDatabase();
 
-        allUserIds.forEach(id => db.setAdmin(id, true));
+            allUserIds.forEach(id => db.setAdmin(id, true));
 
-        await callback({
-            text: `✅ 管理者としてログインしました。無制限でご利用いただけます。`,
-            source: message.content.source,
-        });
+            await callback({
+                text: `✅ 管理者としてログインしました。無制限でご利用いただけます。`,
+                source: message.content.source,
+            });
 
-        return { success: true };
+            return { success: true };
+        } catch (error) {
+            logger.error({ error }, '[ADMIN_LOGIN] Error in handler');
+            await callback({ text: '管理者ログインに失敗しました。', source: message.content.source });
+            return { success: false, error: error instanceof Error ? error : new Error(String(error)) };
+        }
     },
     examples: []
 };
@@ -1133,20 +1157,26 @@ const adminLogoutAction: Action = {
         callback: HandlerCallback,
         _responses: Memory[]
     ): Promise<ActionResult> => {
-        const service = runtime.getService<X402Service>('x402');
-        if (!service) return { success: false };
+        try {
+            const service = runtime.getService<X402Service>('x402');
+            if (!service) return { success: false };
 
-        const allUserIds = getAllUserIds(message);
-        const db = service.getDatabase();
+            const allUserIds = getAllUserIds(message);
+            const db = service.getDatabase();
 
-        allUserIds.forEach(id => db.setAdmin(id, false));
+            allUserIds.forEach(id => db.setAdmin(id, false));
 
-        await callback({
-            text: '🔒 管理者ログアウトしました。',
-            source: message.content.source,
-        });
+            await callback({
+                text: '🔒 管理者ログアウトしました。',
+                source: message.content.source,
+            });
 
-        return { success: true };
+            return { success: true };
+        } catch (error) {
+            logger.error({ error }, '[ADMIN_LOGOUT] Error in handler');
+            await callback({ text: '管理者ログアウトに失敗しました。', source: message.content.source });
+            return { success: false, error: error instanceof Error ? error : new Error(String(error)) };
+        }
     },
     examples: []
 };

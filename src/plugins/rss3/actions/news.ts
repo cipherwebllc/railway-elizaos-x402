@@ -3,7 +3,8 @@ import {
     HandlerCallback,
     IAgentRuntime,
     Memory,
-    State
+    State,
+    logger
 } from "@elizaos/core";
 
 export const newsAction: Action = {
@@ -34,6 +35,7 @@ export const newsAction: Action = {
                 });
             }
         } catch (error) {
+            logger.error({ error }, 'Error fetching RSS3 crypto news');
             if (callback) {
                 await callback({
                     text: "Failed to retrieve crypto news. Please try again later.",

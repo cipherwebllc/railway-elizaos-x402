@@ -60,40 +60,46 @@ export const webSearch: Action = {
         options: any,
         callback: HandlerCallback
     ) => {
-        elizaLogger.log("Composing state for message:", message);
-        state = (await runtime.composeState(message)) as State;
-        const userId = runtime.agentId;
-        elizaLogger.log("User ID:", userId);
+        try {
+            elizaLogger.log("Composing state for message:", message);
+            state = (await runtime.composeState(message)) as State;
+            const userId = runtime.agentId;
+            elizaLogger.log("User ID:", userId);
 
-        const webSearchPrompt = message.content.text;
-        elizaLogger.log("web search prompt received:", webSearchPrompt);
+            const webSearchPrompt = message.content.text;
+            elizaLogger.log("web search prompt received:", webSearchPrompt);
 
-        const webSearchService = new WebSearchService();
-        await webSearchService.initialize(runtime);
-        const searchResponse = await webSearchService.search(
-            webSearchPrompt,
-        );
+            const webSearchService = new WebSearchService();
+            await webSearchService.initialize(runtime);
+            const searchResponse = await webSearchService.search(
+                webSearchPrompt,
+            );
 
-        if (searchResponse && searchResponse.results.length) {
-            const responseList = searchResponse.answer
-                ? `${searchResponse.answer}${
-                      Array.isArray(searchResponse.results) &&
-                      searchResponse.results.length > 0
-                          ? `\n\nFor more details, you can check out these resources:\n${searchResponse.results
-                                .map(
-                                    (result: SearchResult, index: number) =>
-                                        `${index + 1}. [${result.title}](${result.url})`
-                                )
-                                .join("\n")}`
-                          : ""
-                  }`
-                : "";
+            if (searchResponse && searchResponse.results.length) {
+                const responseList = searchResponse.answer
+                    ? `${searchResponse.answer}${
+                          Array.isArray(searchResponse.results) &&
+                          searchResponse.results.length > 0
+                              ? `\n\nFor more details, you can check out these resources:\n${searchResponse.results
+                                    .map(
+                                        (result: SearchResult, index: number) =>
+                                            `${index + 1}. [${result.title}](${result.url})`
+                                    )
+                                    .join("\n")}`
+                              : ""
+                      }`
+                    : "";
 
-            callback({
-                text: MaxTokens(responseList, DEFAULT_MAX_WEB_SEARCH_TOKENS),
-            });
-        } else {
-            elizaLogger.error("search failed or returned no data.");
+                callback({
+                    text: MaxTokens(responseList, DEFAULT_MAX_WEB_SEARCH_TOKENS),
+                });
+            } else {
+                elizaLogger.error("search failed or returned no data.");
+                callback({ text: "Search returned no results. Please try a different query." });
+            }
+        } catch (error) {
+            elizaLogger.error("Error in WEB_SEARCH handler:", error);
+            callback({ text: "Web search failed. Please try again later." });
         }
     },
     examples: [

@@ -169,7 +169,7 @@ async function createX402Fetch(): Promise<typeof fetch> {
         logger.info(`[Aegis] x402 payment enabled (max: ${maxPayment} USDC, wallet: ${account.address})`);
         return wrappedFetch as typeof fetch;
     } catch (error) {
-        logger.warn('[Aegis] Failed to initialize x402-fetch, falling back to plain fetch:', error);
+        logger.warn({ error }, '[Aegis] Failed to initialize x402-fetch, falling back to plain fetch');
         return fetch;
     }
 }
@@ -490,7 +490,7 @@ const aegisBriefingAction: Action = {
             }
             return { success: true };
         } catch (error: any) {
-            logger.error('[Aegis] Briefing fetch failed:', error);
+            logger.error({ error }, '[Aegis] Briefing fetch failed');
 
             let errorMsg: string;
             if (error.message?.includes('402')) {

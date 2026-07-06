@@ -45,7 +45,7 @@ export class ExchangeMonitorService extends Service {
       const url = `https://api.coingecko.com/api/v3/exchanges/${exchangeId}`;
       logger.info(`Fetching exchange info for ${exchangeId}`);
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
 
       if (response.status === 429) {
         logger.warn(`CoinGecko API rate limit reached for ${exchangeId}`);
@@ -68,7 +68,7 @@ export class ExchangeMonitorService extends Service {
       const url = 'https://api.coingecko.com/api/v3/exchanges?per_page=20';
       logger.info('Fetching top exchanges');
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
 
       if (response.status === 429) {
         logger.warn('CoinGecko API rate limit reached for exchanges list');

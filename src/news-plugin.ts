@@ -46,7 +46,7 @@ export class NewsService extends Service {
 
       logger.info('Fetching crypto news from CryptoCompare');
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
 
       if (!response.ok) {
         logger.warn(`CryptoCompare API error: ${response.status} ${response.statusText}`);

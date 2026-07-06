@@ -90,7 +90,7 @@ async function sendToElizaCloud(
             };
         }
 
-        logger.error(`[AGENT_COMM:${agentName}] Network error:`, error);
+        logger.error({ error }, `[AGENT_COMM:${agentName}] Network error`);
         return {
             success: false,
             error: `Network error: ${error.message}`,

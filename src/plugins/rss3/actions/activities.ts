@@ -3,7 +3,8 @@ import {
     HandlerCallback,
     IAgentRuntime,
     Memory,
-    State
+    State,
+    logger
 } from "@elizaos/core";
 import { getActivities } from "@rss3/sdk";
 
@@ -63,6 +64,7 @@ export const activitiesAction: Action = {
                 }
             }
         } catch (error) {
+            logger.error({ error }, 'Error fetching RSS3 activities');
             if (callback) {
                 await callback({
                     text: "Failed to retrieve activities. Please try again later.",

@@ -45,7 +45,7 @@ export class DeFiYieldService extends Service {
       const url = 'https://yields.llama.fi/pools';
       logger.info('Fetching DeFi yield opportunities from DeFiLlama');
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
       const data = await response.json();
 
       if (data.status === 'success' && data.data) {
@@ -86,7 +86,7 @@ export class DeFiYieldService extends Service {
       const url = 'https://yields.llama.fi/pools';
       logger.info('Fetching stablecoin yield opportunities');
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
       const data = await response.json();
 
       if (data.status === 'success' && data.data) {
@@ -121,7 +121,7 @@ export class DeFiYieldService extends Service {
       const url = 'https://yields.llama.fi/pools';
       logger.info(`Fetching yield opportunities for ${chain}`);
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
       const data = await response.json();
 
       if (data.status === 'success' && data.data) {

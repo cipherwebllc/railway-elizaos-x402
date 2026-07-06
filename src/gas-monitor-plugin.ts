@@ -42,7 +42,7 @@ export class GasMonitorService extends Service {
   private async getChainGas(chain: string, url: string): Promise<any> {
     try {
       logger.info(`Fetching ${chain} gas prices`);
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
 
       if (!response.ok) {
         logger.warn(`${chain} gas API error: ${response.status} ${response.statusText}`);

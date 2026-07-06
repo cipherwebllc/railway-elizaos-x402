@@ -20,7 +20,7 @@ const configSchema = z.object({
     .optional()
     .transform((val) => {
       if (!val) {
-        console.warn('Warning: Example plugin variable is not provided');
+        logger.warn('Example plugin variable is not provided');
       }
       return val;
     }),
@@ -182,6 +182,18 @@ const plugin: Plugin = {
       handler: async (_req: any, res: any) => {
         res.json({
           message: 'Hello World!',
+        });
+      },
+    },
+    {
+      name: 'health',
+      path: '/health',
+      type: 'GET',
+      handler: async (_req: any, res: any) => {
+        res.json({
+          status: 'ok',
+          timestamp: new Date().toISOString(),
+          uptime: process.uptime(),
         });
       },
     },
